@@ -1,8 +1,15 @@
-/// File: info_collector.rs
-/// Purpose: Struct definition file.
-/// Defines: Some cool stuff I guess.
-/// Description: I dunno yet.
-/// 
+/// *************************************************************************** ///
+/// File: info_collector.rs                                                     ///
+/// Purpose: Defines the process for building the parser.                       ///
+/// Defines: Collector                                                          ///
+///         Collector: A struct used for keeping all the information regarding  ///
+///             how the parser gets built in one place.                         ///
+/// Description: This file contains the functionality of the collector, which   ///
+///     is used to build the parser using Rust's macro functionality.           ///
+///                                                                             ///
+/// Beware: Thar be Tokens, Idents, and &mut tr's on these seas!                ///
+/// *************************************************************************** ///
+
 /// I see the &mut tr's in my sleep.
 ///             Send help.
 
@@ -209,13 +216,15 @@ fn make_option(toks: Vec<Token>, name: Token) -> TokenStream {
 fn make_if_statement(toks: Vec<Token>, mut idents: Vec<Token>, name: Token, iteration: usize) -> TokenStream {
     if toks.len() == 0 {
         return quote!{
-            return AstNode::new(#name, vec![#(#idents,)*]);
+            return AstNode::new(#name, vec![#(Some(#idents),)*]);
         };
     }
 
+    // Turn the top of the list into a statement
     let (head, ident)= make_single_if_statement(toks[0].clone(), name.clone(), iteration);
     idents.push(Token::Ident(ident.clone()));
 
+    // Recursive call.
     let body = make_if_statement(toks[1..].to_vec(), idents.clone(), name.clone(), iteration + 1);
 
     quote!{
@@ -232,15 +241,18 @@ fn make_if_statement(toks: Vec<Token>, mut idents: Vec<Token>, name: Token, iter
 /// ``` expr := term '-' term ```
 /// 
 /// where the grammar could otherwise become ambiguous.
+/// 
+/// Additionally, the identifier used is returned for later use with the AstNode.
 fn make_single_if_statement(tok: Token, name: Token, indent: usize) -> (TokenStream, proc_macro2::Ident) {
 
+    // We need this if statement because, believe it or not, _"+"_1 is not a valid token in rust.
+    // Can't imagine why.
     let ident = if to_string(tok.clone()).unwrap().as_str().chars().nth(0).unwrap() == '\'' {
         format_ident!("literal_{}", indent)
     }
     else {
         format_ident!("_{}_{}", to_string(tok.clone()).unwrap(), indent)
     };
-    println!("Literal is {:}", ident);
 
 
     (quote!{

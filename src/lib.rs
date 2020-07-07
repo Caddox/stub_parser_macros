@@ -9,8 +9,6 @@
 /// *************************************************************************** ///
 extern crate proc_macro;
 
-mod tokens;
-mod generator;
 mod info_collector;
 mod flat_stream;
 mod token_tracker;

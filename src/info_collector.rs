@@ -185,64 +185,67 @@ fn make_identifier_option(mut tracker: TokenTracker, name: Token) -> TokenStream
 
 }
 
-/// For each option in a grammar, generate a matching statement
+/// Make option will take a series of tokens that are not explicitly
+/// terminals and turn them into the if statements that are required 
+/// to generate the abstract syntax tree.
 fn make_option(toks: Vec<Token>, name: Token) -> TokenStream {
-    let check = make_if_statement(toks.clone(), name.clone());
-    let ast = make_ast(toks.clone(), name.clone());
+    let idents: Vec<Token> = vec![];
 
-    //println!("Make_option returned {:}", check);
-    //println!(" ----- and {:}", ast);
+    // This is the nested if structure needed to match a grammar.
+    let ifs = make_if_statement(toks, idents, name, 0);
 
     quote!{
         let pos = mark(&mut tracker);
-        #check {
-            #ast
-        }
-        else { reset(&mut tracker, pos); }
+        #ifs
+        reset(&mut tracker, pos);
     }
-}
-
-/// Generate the if statement for the match option
-fn make_if_statement(toks: Vec<Token>, rule_ident: Token) -> TokenStream {
-    quote!{
-        if #( expect(&mut tracker, #toks) )&&* // check all the statements
-    }    
-}
-
-/// Generate the ASTNode to return if the match is successful.
-fn make_ast(toks: Vec<Token>, name: Token) -> TokenStream {
-    let content = recurse_ast(toks.clone());
-    quote!{
-        AstNode::new(#name, Box::new(Some(#content)))
-    }
-}
-
-/// Recurse down the list of tokens, popping off the top until we reach the bottom.
-fn recurse_ast(toks: Vec<Token>) -> TokenStream {
-    if toks.len() == 0 {
-        quote!{
-            None
-        }
-    }
-    else if toks.len() == 1 {
-        // Omit the some.
-        let tail = toks[1..].to_vec();
-        let head = &toks[0];
     
-        let content = recurse_ast(tail);
+}
 
+/// This function is recursive, and will populate the idents vector as 
+/// it goes down. At each iteration, the item is expected, and the matching if
+/// statement is created to match it.
+/// When the end is reached, the AstNode constructor is built.
+fn make_if_statement(toks: Vec<Token>, mut idents: Vec<Token>, name: Token, iteration: usize) -> TokenStream {
+    if toks.len() == 0 {
         return quote!{
-            AstNode::new(#head, Box::new(#content))
+            return AstNode::new(#name, vec![#(#idents,)*]);
+        };
+    }
+
+    let (head, ident)= make_single_if_statement(toks[0].clone(), name.clone(), iteration);
+    idents.push(Token::Ident(ident.clone()));
+
+    let body = make_if_statement(toks[1..].to_vec(), idents.clone(), name.clone(), iteration + 1);
+
+    quote!{
+        #head {
+            #body
         }
+    }
+
+}
+
+/// A function used to make a single if statement. Indent is used to make a unique
+/// identifier in the case of a grammar such as the following:
+/// 
+/// ``` expr := term '-' term ```
+/// 
+/// where the grammar could otherwise become ambiguous.
+fn make_single_if_statement(tok: Token, name: Token, indent: usize) -> (TokenStream, proc_macro2::Ident) {
+
+    let ident = if to_string(tok.clone()).unwrap().as_str().chars().nth(0).unwrap() == '\'' {
+        format_ident!("literal_{}", indent)
     }
     else {
-        let tail = toks[1..].to_vec();
-        let head = &toks[0];
+        format_ident!("_{}_{}", to_string(tok.clone()).unwrap(), indent)
+    };
+    println!("Literal is {:}", ident);
 
-        let content = recurse_ast(tail);
 
-        return quote!{
-            AstNode::new(#head, Box::new(Some(#content)))
-        }
-    }
+    (quote!{
+        let #ident = expect(&mut tracker, #tok);
+        if #ident.is_some() 
+    }, ident)
+
 }

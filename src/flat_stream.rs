@@ -8,7 +8,7 @@
 ///     of tokens. This is more of a helper struct, as it serves as a middle
 ///     ground between a proc_macro TokenStream and a vector of tokens.
 
-use proc_macro2::{ TokenStream, TokenTree, Ident, Literal, Punct, Delimiter, Group, Span, Spacing };
+use proc_macro2::{ TokenStream, TokenTree, Ident, Literal, Punct, Delimiter, Group, Span };
 use quote::{TokenStreamExt};
 
 #[derive(Debug, Clone)]
@@ -23,7 +23,7 @@ pub enum Token {
     Punct(Punct),
     Begin(Group, usize),
     End(Delimiter, Span),
-    Null
+    //Null
 }
 
 impl quote::ToTokens for Token {

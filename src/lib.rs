@@ -13,11 +13,9 @@ mod info_collector;
 mod flat_stream;
 mod token_tracker;
 mod ast;
+mod code_gen;
 
 extern crate quote;
-
-use syn::{parse_macro_input};
-
 
 /// Wtf man!
 #[proc_macro]
@@ -26,47 +24,10 @@ pub fn peg_parse(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let test = info_collector::Collector::new(input.into());
     let out = test.generate_all();
     match out {
-        Ok(_) => {},
+        Ok(m) => { return m.into(); }
         Err(m) => {
             let err = format!("Peg gen failed with statement: {}", m);
             panic!(err);
         }
     }
-    unimplemented!();
-    /*
-    let tokens = tokens::FlatStream::new(input.into());
-    let check = tokens::parse_flat_stream(&tokens);
-
-
-    match check {
-        Ok(_) => {}, // Do nothing?
-        Err(msg) => {
-            panic!("Error while generating grammar: {}", msg);
-        }
-    }
-
-    /*
-    for t in tokens.tokens.clone() {
-        println!("{:#?}", t);
-    }
-    */
-
-
-    println!("{:?}", tokens.tokens[0]);
-
-    //"fn answer() -> u32 {42}".parse().unwrap()
-    proc_macro::TokenStream::new()
-    
-    //let input = parse_macro_input!();
-
-    //let val = input.value();
-    //println!("{:?}", val);
-    
-
-    //let _tmp = ebnf::parsing_test(input.into());
-
-
-
-    //"fn answer() -> u32 {42}".parse().unwrap()
-    */
 }

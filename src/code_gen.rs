@@ -32,16 +32,13 @@ pub fn generate_structures(names: &Vec<Token>) -> TokenStream {
             child: Vec<Option<AstOrToken>>,
         }
         impl AstNode {
-            pub fn new(tok: Token, child: Vec<Option<AstOrToken>>) -> AstNode {
+            pub fn new(tok: GrammarToken, child: Vec<Option<AstOrToken>>) -> AstNode {
                 AstNode {
                     Type: tok,
                     child: child,
                 }
             }
 
-            pub fn add_child(&mut self, child: Box<AstNode>) {
-                self.child = Some(child);
-            }
         }
     };
     

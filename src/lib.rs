@@ -7,15 +7,15 @@
 /// Description: This file contains functions used to help maintain accurate    ///
 ///     token tracking while walking the FlatStream we are given.               /// 
 /// *************************************************************************** ///
+
 extern crate proc_macro;
+extern crate quote;
 
 mod info_collector;
 mod flat_stream;
 mod token_tracker;
-mod ast;
 mod code_gen;
 
-extern crate quote;
 
 /// Wtf man!
 #[proc_macro]
@@ -30,4 +30,5 @@ pub fn peg_parse(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             panic!(err);
         }
     }
+
 }

@@ -1,17 +1,17 @@
-/// *************************************************************************** ///
-/// File: info_collector.rs                                                     ///
-/// Purpose: Defines the process for building the parser.                       ///
-/// Defines: Collector                                                          ///
-///         Collector: A struct used for keeping all the information regarding  ///
-///             how the parser gets built in one place.                         ///
-/// Description: This file contains the functionality of the collector, which   ///
-///     is used to build the parser using Rust's macro functionality.           ///
-///                                                                             ///
-/// Beware: Thar be Tokens, Idents, and &mut tr's on these seas!                ///
-/// *************************************************************************** ///
+//! *************************************************************************** ///
+//! File: info_collector.rs                                                     ///
+//! Purpose: Defines the process for building the parser.                       ///
+//! Defines: Collector                                                          ///
+//!         Collector: A struct used for keeping all the information regarding  ///
+//!             how the parser gets built in one place.                         ///
+//! Description: This file contains the functionality of the collector, which   ///
+//!     is used to build the parser using Rust's macro functionality.           ///
+//!                                                                             ///
+//! Beware: Thar be Tokens, Idents, and &mut tr's on these seas!                ///
+//! *************************************************************************** ///
 
-/// I see the &mut tr's in my sleep.
-///             Send help.
+//! I see the &mut tr's in my sleep.
+//!             Send help.
 
 use proc_macro2::{ TokenStream };
 use quote::{ quote, format_ident };
@@ -83,7 +83,7 @@ impl Collector {
             let test = self.generate_rule(rule, index);
             match test{
                 Ok(v) => { // If okay, merge all the rules into one big rule for one vector slot.
-                    let individual_rules = quote!(#(#v)*);
+                    let individual_rules = quote!(#(#v)* return Err(()););
                     self.rules.push(individual_rules);
                 }, 
                 Err(m) => {
@@ -98,19 +98,19 @@ impl Collector {
         println!("======> Done generating rules.");
         //println!("======> Rules made: {:?}", self.rules.clone()[0]);
 
-        println!("Running boilerplate generation. . . ");
+        //println!("Running boilerplate generation. . . ");
         let boilerplate = generate_structures(&self.names);
-        println!("Boilerplate generated: {:}", boilerplate);
+        //println!("Boilerplate generated: {:}", boilerplate);
 
 
         ///// FINAL GLUE SECTION /////
         // From here, geneate more code, append it all together, and return it out.
         let parser = self.generate_parser();
-        println!("Parser generated: {:}", parser);
+        //println!("Parser generated: {:}", parser);
         let expect = self.generate_expect_func();
-        println!("Expect func generated: {:}", expect);
+        //println!("Expect func generated: {:}", expect);
         let match_f = self.generate_match_func();
-        println!("Match func generated: {:}", match_f);
+        //println!("Match func generated: {:}", match_f);
 
         Ok(quote!{
             #boilerplate
@@ -123,7 +123,7 @@ impl Collector {
     /// Working on one rule, generate the code needed for the rule to match correctly.
     fn generate_rule(&mut self, toks: Vec<Token>, index: usize) -> Result<Vec<TokenStream>, String> {
         let working_name = self.names[index].clone();
-        println!("\n\n\nGenerating rule(s) for {:}", to_string(working_name.clone())?);
+        //println!("\n\n\nGenerating rule(s) for {:}", to_string(working_name.clone())?);
         //println!("Working on {:?}", toks);
 
         // We have not checked for multiple rules yet, so we can loop over that.
@@ -178,9 +178,11 @@ impl Collector {
 
         }
 
+        /*
         for r in options.clone() {
             println!("RULE: {:}", r);
         }
+        */
         //println!("Rules produced: {:?}", options);
         Ok(options)
     }
@@ -213,7 +215,7 @@ impl Collector {
     fn make_if_statement(&mut self, toks: Vec<Token>, mut idents: Vec<Token>, name: Token, iteration: usize) -> TokenStream {
         if toks.len() == 0 {
             return quote!{
-                return AstNode::new(#name, vec![#(Some(#idents),)*]);
+                return Ok(AstNode::new(#name, vec![#(#idents,)*]));
             };
         }
 
@@ -253,12 +255,12 @@ impl Collector {
 
         let (stmt, ident) = self.make_single_if_statement(group.clone(), 0);
 
-        println!("==> Identifier option: {:}", stmt);
+        //println!("==> Identifier option: {:}", stmt);
 
         quote!{
             let pos = mark(&mut tracker);
             #stmt {
-                return AstNode::new(#name, vec![Some(#ident)]);
+                return Ok(AstNode::new(#name, vec![#ident]));
             }
             reset(&mut tracker, pos);
         }
@@ -300,18 +302,18 @@ impl Collector {
     fn generate_parser(&self) -> TokenStream {
         let top_name = &self.names[0];
         quote!{
-            pub fn parser(tracker: &mut TokenTracker) -> Result<Vec<AstNode>> {
-                let res = vec![];
+            pub fn parser(mut tracker: &mut TokenTracker) -> Result<Vec<AstOrToken>, ()> {
+                let mut res = vec![];
 
                 let mut tree = expect(&mut tracker, &#top_name);
 
                 while tree.is_some() {
-                    res.push(Some(tree.clone()));
+                    res.push(tree.unwrap());
 
                     tree = expect(&mut tracker, &#top_name);
                 }
 
-                Ok(res.clone())
+                Ok(res)
             }
         }
     }
@@ -324,39 +326,43 @@ impl Collector {
     /// - (TokenType)
     fn generate_expect_func(&self) -> TokenStream {
         quote!{
-            pub fn expect(tracker: &mut TokenTracker, expected: &dyn Any) -> Option<AstOrToken> {
+            pub fn expect(mut tracker: &mut TokenTracker, expected: &dyn Any) -> Option<AstOrToken> {
                 // For each type it could be, check if the token matches. 
                 if let Some(grammar) = expected.downcast_ref::<GrammarToken>() { // Ast
-                    return Some(AstOrToken::Ast(match_rule(&mut tracker, grammar)));
+                    let ast = match_rule(&mut tracker, grammar);
+                    match ast {
+                        Ok(tree) => { return Some(AstOrToken::Ast(tree)); },
+                        Err(_) => { return None }
+                    }
+                    //return Some(AstOrToken::Ast(match_rule(&mut tracker, grammar)));
                 }
-                else if let Some(literal) = expected.downcast_ref::<char>() { // Token
+                if let Some(literal) = expected.downcast_ref::<char>() { // Token
                     // For this one, we have to match the lexeme field of the token
-                    let top = get_token(&mut tracker);
-                    let lit_str = String::from(literal);
+                    let top = get_token(&mut tracker).unwrap();
+                    let lit_str = literal.to_string();
                     
                     if top.lexeme == lit_str {
                         return Some(AstOrToken::Tok(top.clone()));
                     }
                     return None;
                 }
-                else if let Some(tok_type) = expected.downcast_ref::<(TokenType)> () { // Token
+                if let Some(tok_type) = expected.downcast_ref::<TokenType> () { // Token
                     // If we get here, we expect the token.identifier to match the de-referenced type 
-                    let top = get_token(&mut tracker);
+                    let top = get_token(&mut tracker).unwrap();
                     println!("----- In expect ------");
-                    println!("Token: {:}", top.clone());
-                    println!("Idenfitier: {:?}", type);
+                    println!("Token: {:?}", top.clone());
+                    println!("Identifier: {:?}", tok_type);
 
-                    match top.identifier {
-                        tok_type => { Some(top.clone()) },
-                        _ => { None }
+                    let identifier = top.clone().identifier;
+
+                    if &identifier == tok_type {
+                        return Some(AstOrToken::Tok(top));
+                    }
+                    else {
+                        return None;
                     }
                 }
-                else {
-                    None
-                }
-
-                None
-
+                return None;
             }
         }
     }
@@ -370,11 +376,13 @@ impl Collector {
         let names = self.names.clone();
         
         quote!{
-            fn match_rule(tracker: &mut TokenTracker, grammar_token: &GrammarToken) -> AstNode {
+            fn match_rule(mut tracker: &mut TokenTracker, grammar_token: &GrammarToken) -> Result<AstNode, ()> {
                 match grammar_token {
-                    #( #names => { #rules },)*
-                    _ => panic! ("Parsing failed to match token on grammar rule: {:?}", grammar_token),
+                    #( GrammarToken::#names => { #rules },)*
+                    _ => {panic! ("Parsing failed to match token on grammar rule: {:?}", grammar_token) }
                 }
+
+
             }
         }
     }

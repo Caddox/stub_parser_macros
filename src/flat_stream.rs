@@ -84,3 +84,31 @@ fn flatten(tokens: &mut Vec<Token>, tree: TokenTree) {
         }
     }
 }
+
+/// Given a group, return the string deliminator value.
+pub fn give_group_deliminator(token: Token) -> String {
+    let group: proc_macro2::Group;
+    match token {
+        Token::Begin(g, _) => {
+            group = g;
+        },
+        _ => {
+            return String::from("Token is not of type Begin.");
+        }
+    }
+
+    match group.delimiter() {
+        proc_macro2::Delimiter::Parenthesis => {
+            String::from("(")
+        },
+        proc_macro2::Delimiter::Brace => {
+            String::from("{")
+        },
+        proc_macro2::Delimiter::Bracket => {
+            String::from("[")
+        },
+        proc_macro2::Delimiter::None => {
+            String::from("None")
+        }
+    }
+}

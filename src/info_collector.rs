@@ -16,7 +16,7 @@
 use proc_macro2::{ TokenStream };
 use quote::{ quote, format_ident };
 
-use crate::flat_stream::{FlatStream, Token};
+use crate::flat_stream::{FlatStream, Token, give_group_deliminator};
 use crate::token_tracker::{ TokenTracker, get_token, mark, reset, peek_as_string, get_as_string, give_max, to_string};
 use crate::code_gen::generate_structures;
 
@@ -80,7 +80,8 @@ impl Collector {
         // of them to generate the parser token stream.
         let mut index = 0;
         for rule in mid_rules {
-            let test = self.generate_rule(rule, index);
+            let name = self.names[index].clone();
+            let test = self.generate_rule(rule, name);
             match test{
                 Ok(v) => { // If okay, merge all the rules into one big rule for one vector slot.
                     let individual_rules = quote!(#(#v)* return Err(()););
@@ -121,10 +122,11 @@ impl Collector {
     }
 
     /// Working on one rule, generate the code needed for the rule to match correctly.
-    fn generate_rule(&mut self, toks: Vec<Token>, index: usize) -> Result<Vec<TokenStream>, String> {
-        let working_name = self.names[index].clone();
+    fn generate_rule(&mut self, toks: Vec<Token>, name: Token) -> Result<Vec<TokenStream>, String> {
+        //let working_name = self.names[index].clone();
         //println!("\n\n\nGenerating rule(s) for {:}", to_string(working_name.clone())?);
         //println!("Working on {:?}", toks);
+        let working_name = name.clone();
 
         // We have not checked for multiple rules yet, so we can loop over that.
         let mut tr = TokenTracker::new(&FlatStream::new_from_tokens(toks));
@@ -136,7 +138,7 @@ impl Collector {
             // Loop over list until an 'or' symbol (the '|') is hit or the end of the token list is reached.
             while !peek_as_string(&mut tr).is_err()            // *.is_err needs to be first for short-circuit evaluation.
             && peek_as_string(&mut tr)? != String::from("|") {
-                //println!("Looking at: {:}", peek_as_string(&mut tr)?);
+                println!("Looking at: {:}", peek_as_string(&mut tr)?);
                 // Look for the token sequence of #( and call the requsite subroutine.
                 if peek_as_string(&mut tr)? == String::from("#") {
                     let pos = mark(&mut tr);
@@ -162,6 +164,54 @@ impl Collector {
                     else { // Was not an identifier.
                         reset(&mut tr, pos);
                     }
+                }
+
+                // This is the situation with paren groups.
+                if peek_as_string(&mut tr)? == String::from("BEGIN") {
+                    let pos = mark(&mut tr);
+                    let mut internals = vec![];
+
+                    // Grab the paren group to keep for later
+                    let paren_group = get_token(&mut tr)?;
+                    println!("Parent paren group is {:?}", paren_group);
+
+                    while peek_as_string(&mut tr)? != String::from("END") {
+                        let _end = get_token(&mut tr)?; // Eat end as we dont need it.
+                        internals.push(_end.clone());
+                        println!("Internal object is {:?}", _end);
+                    }
+
+                    // Eat trailing end token.
+                    let _end = get_token(&mut tr)?;
+                    println!("End is {:?}", _end);
+
+                    
+                    // Iterate to the end of the group, and see look for the modifier token.
+                    let mod_pos = mark(&mut tr);
+                    let modifier_token: Token;
+                    if peek_as_string(&mut tr).is_ok() &&
+                    (peek_as_string(&mut tr)? == String::from("*") || 
+                    peek_as_string(&mut tr)? == String::from("+")) { // Check that there is actually a token there.
+                        modifier_token = get_token(&mut tr)? // If not, don't walk off the end and cause a panic.
+                    }
+                    else {
+                        reset(&mut tr, mod_pos); // Back the parser up to before the mod check
+                        modifier_token = _end.clone();
+                    }
+
+                    println!("Modifier is {:?}", modifier_token.clone());
+                    println!("Internals are {:?}", internals);
+
+                    println!("WARNING: Skipping repitition for now.. . .");
+                    /*
+                    options.push(self.make_paren_group_option(paren_group.clone(),
+                        internals.clone(),
+                        modifier_token.clone(),
+                        working_name.clone())?);
+                        */
+                    
+                    continue;
+                    
                 }
 
                 current_option.push(get_token(&mut tr)?);
@@ -205,6 +255,86 @@ impl Collector {
             reset(&mut tracker, pos);
         }
     
+    }
+
+    /// This function is a wrapper for options that arrive with in groups of parenthesis. 
+    /// This allows us to add modifiers as we see fit, or even create matching
+    /// subgroups.
+    /// 
+    /// Basically, its more complexity and I'm not sure if I know what to do here.
+    fn make_paren_group_option(&mut self, group: Token, internals: Vec<Token>, modifier: Token, name: Token) -> Result<TokenStream, String> {
+        // Im really not sure how to do this. . . 
+
+        /*
+         * Basically, what we need to do is treat each paren grouping as it's own individual grouping,
+         * with some extra possibilities. Lets walk the possibilities:
+         * A) No modifier token: We can treat the items in the paren as its own tree. No
+         *  further action is needed.
+         * B) * as modifier: Match zero or multiple. Add a loop of some kind I suppose.
+         * C) + as modifier: Match one or more tokens. Again, we have to loop.
+         * 
+         * Additionally, the type of parenthasis matter too. Normal '(' and ')' are simply a match,
+         * where as '[' and ']' are an optional match which should not affect the outcome if it is not present.
+         */
+        // What the hell am I doing? Just call the rule maker on the body
+        // you utter dunce.
+        //let internal_indent_quote = format_ident!("{}_{}", to_string(name)?, "internal");
+        //let internal_indent_quote = format_ident!("{}", to_string(name)?);
+        //let internal_name = Token::Ident(internal_indent_quote);
+        //let rules = self.generate_rule(internals.clone(), internal_name.clone())?;
+
+        // Now, wrap it in the requisite info depending on the paren type and
+        // modifier token.
+
+        // Honestly, doesn't take a genius to figure that shit out and it 
+        // took you FOUR WHOLE F****ING DAYS
+        // Jesus.
+
+        let mut matches = vec![];
+        let mut tr = TokenTracker::new(&FlatStream::new_from_tokens(internals));
+
+        while peek_as_string(&mut tr)? != String::from("|") {
+            matches.push(get_token(&mut tr)?);
+        }
+
+
+        let _optional_check = match give_group_deliminator(group.clone()).as_str() {
+            "(" => { // Nothing special.
+                false
+            },
+            "[" => {
+                true
+            },
+            "{" => {
+                true
+            }, // FUTURE: Add grammar variables to speed up parsing?
+            _ => {
+                let err = format!("Deliminator is of unknown type of parenthesis.");
+                return Err(err);
+            }
+        };
+
+        // Now that we have the rule(s), wrap them as needed according to the modifier.
+        let final_rule = match to_string(modifier)?.as_str() {
+            "*" => {
+                Ok(quote!{
+                    while #(expect(&mut tr, #matches).is_some() ||)*
+                    {
+                        
+                    }
+                })
+            },
+            "+" => {
+                unimplemented!();
+            },
+            _ => {
+                panic!("WTF????");
+            }
+        };
+
+        final_rule
+
+        //unimplemented!("Paren grouping rules are STILL not done. :^)");
     }
 
     /// This function is recursive, and will populate the idents vector as 
@@ -327,8 +457,10 @@ impl Collector {
     fn generate_expect_func(&self) -> TokenStream {
         quote!{
             pub fn expect(mut tracker: &mut TokenTracker, expected: &dyn Any) -> Option<AstOrToken> {
+                println!("----- In expect ------");
                 // For each type it could be, check if the token matches. 
                 if let Some(grammar) = expected.downcast_ref::<GrammarToken>() { // Ast
+                    println!("matching {:?}", grammar);
                     let ast = match_rule(&mut tracker, grammar);
                     match ast {
                         Ok(tree) => { return Some(AstOrToken::Ast(tree)); },
@@ -337,8 +469,15 @@ impl Collector {
                     //return Some(AstOrToken::Ast(match_rule(&mut tracker, grammar)));
                 }
                 if let Some(literal) = expected.downcast_ref::<char>() { // Token
+                    println!("MATCHING LITERAL {:?}", literal);
                     // For this one, we have to match the lexeme field of the token
-                    let top = get_token(&mut tracker).unwrap();
+                    let test = get_token(&mut tracker);
+
+                    if test.is_err() { // Ensure that an error works correctly.
+                        return None
+                    }
+                
+                    let top = test.unwrap();
                     let lit_str = literal.to_string();
                     
                     if top.lexeme == lit_str {
@@ -347,18 +486,27 @@ impl Collector {
                     return None;
                 }
                 if let Some(tok_type) = expected.downcast_ref::<TokenType> () { // Token
+                    println!("matching tok_type {:?}", tok_type);
                     // If we get here, we expect the token.identifier to match the de-referenced type 
-                    let top = get_token(&mut tracker).unwrap();
-                    println!("----- In expect ------");
+                    let test = get_token(&mut tracker);
+
+                    if test.is_err() {
+                        return None
+                    }
+                    let top = test.unwrap();
+
+
                     println!("Token: {:?}", top.clone());
                     println!("Identifier: {:?}", tok_type);
 
                     let identifier = top.clone().identifier;
 
                     if &identifier == tok_type {
+                        println!("returned some");
                         return Some(AstOrToken::Tok(top));
                     }
                     else {
+                        println!("returned none");
                         return None;
                     }
                 }
@@ -377,6 +525,7 @@ impl Collector {
         
         quote!{
             fn match_rule(mut tracker: &mut TokenTracker, grammar_token: &GrammarToken) -> Result<AstNode, ()> {
+                println!("Matching {:?} in match_rule", grammar_token);
                 match grammar_token {
                     #( GrammarToken::#names => { #rules },)*
                     _ => {panic! ("Parsing failed to match token on grammar rule: {:?}", grammar_token) }

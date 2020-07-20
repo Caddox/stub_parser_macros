@@ -18,7 +18,7 @@ use crate::flat_stream::Token;
 pub fn generate_structures(names: &Vec<Token>) -> TokenStream {
 
     let ast_or_token = quote!{
-        #[derive(Debug)]
+        #[derive(Debug, Clone)]
         pub enum AstOrToken {
             Ast(AstNode),
             Tok(Token),
@@ -26,7 +26,7 @@ pub fn generate_structures(names: &Vec<Token>) -> TokenStream {
     };
     // Generate the abstract syntax tree info first.
     let ast_info = quote!{
-        #[derive(Debug)]
+        #[derive(Debug, Clone)]
         pub struct AstNode {
             Type: GrammarToken,
             child: Vec<Option<AstOrToken>>,
@@ -58,7 +58,7 @@ pub fn generate_structures(names: &Vec<Token>) -> TokenStream {
 /// in an enum-style.
 fn generate_grammar_tokens(names: &Vec<Token>) -> TokenStream {
     quote!{
-        #[derive(Debug)]
+        #[derive(Debug, Clone)]
         pub enum GrammarToken {
             #( #names ),*
             ,Literal,

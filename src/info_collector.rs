@@ -84,7 +84,11 @@ impl Collector {
             let test = self.generate_rule(rule, name);
             match test{
                 Ok(v) => { // If okay, merge all the rules into one big rule for one vector slot.
-                    let individual_rules = quote!(#(#v)* return Err(()););
+                    let individual_rules = quote!{
+                        let mut identifiers: Vec<Option<AstOrToken>> = vec![];
+                        #(#v)* 
+                        return Err(());
+                    };
                     self.rules.push(individual_rules);
                 }, 
                 Err(m) => {
@@ -244,15 +248,14 @@ impl Collector {
     /// 
     /// Returns a TokenStream
     fn make_option(&mut self, toks: Vec<Token>, name: Token) -> TokenStream {
-        let idents: Vec<Token> = vec![];
-
         // This is the nested if structure needed to match a grammar.
-        let ifs = self.make_if_statement(toks, idents, name, 0);
+        let ifs = self.make_if_statement(toks, name, 0);
 
         quote!{
             let pos = mark(&mut tracker);
             #ifs
             reset(&mut tracker, pos);
+            identifiers.clear();
         }
     
     }
@@ -342,19 +345,18 @@ impl Collector {
     /// statement is created to match it.
     /// 
     /// When the end is reached, the AstNode constructor is built.
-    fn make_if_statement(&mut self, toks: Vec<Token>, mut idents: Vec<Token>, name: Token, iteration: usize) -> TokenStream {
+    fn make_if_statement(&mut self, toks: Vec<Token>, name: Token, iteration: usize) -> TokenStream {
         if toks.len() == 0 {
             return quote!{
-                return Ok(AstNode::new(#name, vec![#(#idents,)*]));
+                return Ok(AstNode::new(#name, identifiers.clone()));
             };
         }
 
         // Turn the top of the list into a statement
-        let (head, ident)= self.make_single_if_statement(toks[0].clone(), iteration);
-        idents.push(Token::Ident(ident.clone()));
+        let head = self.make_single_if_statement(toks[0].clone(), iteration);
 
         // Recursive call.
-        let body = self.make_if_statement(toks[1..].to_vec(), idents.clone(), name.clone(), iteration + 1);
+        let body = self.make_if_statement(toks[1..].to_vec(), name.clone(), iteration + 1);
 
         quote!{
             #head {
@@ -381,16 +383,13 @@ impl Collector {
 
         let group = get_token(&mut tracker).unwrap();
 
-        //println!("Identifier option: {:}", quote!(#group));
-
-        let (stmt, ident) = self.make_single_if_statement(group.clone(), 0);
-
-        //println!("==> Identifier option: {:}", stmt);
+        let stmt = self.make_single_if_statement(group.clone(), 0);
 
         quote!{
+            identifiers.clear();
             let pos = mark(&mut tracker);
             #stmt {
-                return Ok(AstNode::new(#name, vec![#ident]));
+                return Ok(AstNode::new(#name, identifiers.clone()));
             }
             reset(&mut tracker, pos);
         }
@@ -404,23 +403,12 @@ impl Collector {
     /// where the grammar could otherwise become ambiguous.
     /// 
     /// Additionally, the identifier used is returned for later use with the AstNode.
-    fn make_single_if_statement(&mut self, tok: Token, indent: usize) -> (TokenStream, proc_macro2::Ident) {
+    fn make_single_if_statement(&mut self, tok: Token, indent: usize) -> TokenStream {
 
-        // We need this if statement because, believe it or not, _"+"_1 is not a valid token in rust.
-        // Can't imagine why.
-        let ident = if to_string(tok.clone()).unwrap().as_str().chars().nth(0).unwrap() == '\'' {
-            format_ident!("literal_{}", indent)
+        quote!{
+            identifiers.push(expect(&mut tracker, &#tok));
+            if identifiers.last().cloned().unwrap().is_some() // What the fuck.
         }
-        else {
-            format_ident!("_{}_{}", to_string(tok.clone()).unwrap(), indent)
-        };
-
-
-        (quote!{
-            let #ident = expect(&mut tracker, &#tok);
-            if #ident.is_some() 
-        }, ident)
-
     }
 
     /// Function used to auto-generate the parser function, 

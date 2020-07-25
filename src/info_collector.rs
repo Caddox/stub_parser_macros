@@ -206,19 +206,25 @@ impl Collector {
                     println!("Modifier is {:?}", modifier_token.clone());
                     println!("Internals are {:?}", internals);
 
-                    println!("WARNING: Skipping repitition for now.. . .");
-                    /*
-                    options.push(self.make_paren_group_option(paren_group.clone(),
+                   // options.push(self.make_paren_group_option(paren_group.clone(),
+                    current_option.push(self.make_paren_group_option(paren_group.clone(),
                         internals.clone(),
                         modifier_token.clone(),
                         working_name.clone())?);
-                        */
+                     
                     
                     continue;
                     
                 }
 
-                current_option.push(get_token(&mut tr)?);
+                // We need to alter this in such a way that 
+                // paren groups can be interpolated within normal symbols.
+                // Right now, normal symbols are being pushed to current_option and 
+                // being turned into if statements later.
+                // If we turn everything into it's relevant if statement and interpolate them
+                // together later (when '|' or ';' is seen), we can work around this.
+                //current_option.push(get_token(&mut tr)?);
+                current_option.push(self.make_single_if_statement(get_token(&mut tr)?));
             }
 
             if !peek_as_string(&mut tr).is_err() {
@@ -227,7 +233,17 @@ impl Collector {
             }
         
             if current_option.len() != 0 {
-                options.push(self.make_option(current_option, working_name.clone()));
+                //options.push(self.make_option(current_option, working_name.clone()));
+                let composed = self.collect_options(current_option.clone(), working_name.clone());
+                options.push(
+                    quote!{
+                        let pos = mark(&mut tracker);
+                        #composed
+                        reset(&mut tracker, pos);
+                        identifiers.clear();
+                    }
+                )
+
             }
 
         }
@@ -249,7 +265,7 @@ impl Collector {
     /// Returns a TokenStream
     fn make_option(&mut self, toks: Vec<Token>, name: Token) -> TokenStream {
         // This is the nested if structure needed to match a grammar.
-        let ifs = self.make_if_statement(toks, name, 0);
+        let ifs = self.make_if_statement(toks, name);
 
         quote!{
             let pos = mark(&mut tracker);
@@ -276,29 +292,26 @@ impl Collector {
          * B) * as modifier: Match zero or multiple. Add a loop of some kind I suppose.
          * C) + as modifier: Match one or more tokens. Again, we have to loop.
          * 
-         * Additionally, the type of parenthasis matter too. Normal '(' and ')' are simply a match,
+         * Additionally, the type of parenthesis matter too. Normal '(' and ')' are simply a match,
          * where as '[' and ']' are an optional match which should not affect the outcome if it is not present.
          */
-        // What the hell am I doing? Just call the rule maker on the body
-        // you utter dunce.
-        //let internal_indent_quote = format_ident!("{}_{}", to_string(name)?, "internal");
-        //let internal_indent_quote = format_ident!("{}", to_string(name)?);
-        //let internal_name = Token::Ident(internal_indent_quote);
-        //let rules = self.generate_rule(internals.clone(), internal_name.clone())?;
 
-        // Now, wrap it in the requisite info depending on the paren type and
-        // modifier token.
-
-        // Honestly, doesn't take a genius to figure that shit out and it 
-        // took you FOUR WHOLE F****ING DAYS
-        // Jesus.
-
-        let mut matches = vec![];
         let mut tr = TokenTracker::new(&FlatStream::new_from_tokens(internals));
 
-        while peek_as_string(&mut tr)? != String::from("|") {
-            matches.push(get_token(&mut tr)?);
+        let mut matches = vec![]; // Holds all match groups.
+        let mut current_group = vec![];
+        // Iterate over the given internal token list and group the tokens.
+        while !peek_as_string(&mut tr).is_err() {
+            if peek_as_string(&mut tr)? == String::from("|") {
+                // Skip this token.
+                let _null = get_token(&mut tr);
+                matches.push(current_group.clone());
+                current_group.clear();
+            }
+            current_group.push(get_token(&mut tr)?);
         }
+
+        matches.push(current_group);
 
 
         let _optional_check = match give_group_deliminator(group.clone()).as_str() {
@@ -317,26 +330,35 @@ impl Collector {
             }
         };
 
-        // Now that we have the rule(s), wrap them as needed according to the modifier.
-        let final_rule = match to_string(modifier)?.as_str() {
-            "*" => {
-                Ok(quote!{
-                    while #(expect(&mut tr, #matches).is_some() ||)*
-                    {
-                        
+        println!("BUILDING Loop, matches is {:?}", matches);
+    
+        let mut inner = quote!();
+
+        for group in matches {
+            inner = quote!{
+                #inner
+                //let inner_pos = mark(&mut tracker);
+                loop {
+                    let reversed_size = identifiers.len();
+                    let fallback_pos = mark(&mut tracker); // In the case of matching part of a group, ensure we can back up sufficiently.
+
+                    #(identifiers.push(expect(&mut tracker, &#group));
+                    if identifiers.last().cloned().unwrap().is_none() { 
+                        while identifiers.len() != reversed_size { // Pop all the previously matched tokens to preserve nirvana.
+                            let _null = identifiers.pop();
+                        }
+                        reset(&mut tracker, fallback_pos);
+                        //identifiers.pop();
+                        break;
                     }
-                })
-            },
-            "+" => {
-                unimplemented!();
-            },
-            _ => {
-                panic!("WTF????");
-            }
-        };
+                )*
+                }
+            };
+        }
 
-        final_rule
-
+        Ok(quote!{
+            #inner
+        })
         //unimplemented!("Paren grouping rules are STILL not done. :^)");
     }
 
@@ -345,7 +367,7 @@ impl Collector {
     /// statement is created to match it.
     /// 
     /// When the end is reached, the AstNode constructor is built.
-    fn make_if_statement(&mut self, toks: Vec<Token>, name: Token, iteration: usize) -> TokenStream {
+    fn make_if_statement(&mut self, toks: Vec<Token>, name: Token) -> TokenStream {
         if toks.len() == 0 {
             return quote!{
                 return Ok(AstNode::new(#name, identifiers.clone()));
@@ -353,10 +375,10 @@ impl Collector {
         }
 
         // Turn the top of the list into a statement
-        let head = self.make_single_if_statement(toks[0].clone(), iteration);
+        let head = self.make_single_if_statement(toks[0].clone());
 
         // Recursive call.
-        let body = self.make_if_statement(toks[1..].to_vec(), name.clone(), iteration + 1);
+        let body = self.make_if_statement(toks[1..].to_vec(), name.clone());
 
         quote!{
             #head {
@@ -383,7 +405,7 @@ impl Collector {
 
         let group = get_token(&mut tracker).unwrap();
 
-        let stmt = self.make_single_if_statement(group.clone(), 0);
+        let stmt = self.make_single_if_statement(group.clone());
 
         quote!{
             identifiers.clear();
@@ -403,12 +425,33 @@ impl Collector {
     /// where the grammar could otherwise become ambiguous.
     /// 
     /// Additionally, the identifier used is returned for later use with the AstNode.
-    fn make_single_if_statement(&mut self, tok: Token, indent: usize) -> TokenStream {
+    fn make_single_if_statement(&mut self, tok: Token) -> TokenStream {
 
         quote!{
             identifiers.push(expect(&mut tracker, &#tok));
             if identifiers.last().cloned().unwrap().is_some() // What the fuck.
         }
+    }
+
+    fn collect_options(&mut self, stmts: Vec<TokenStream>, name: Token) -> TokenStream {
+        // Base case:
+        if stmts.len() == 0 {
+            return quote!{
+                return Ok(AstNode::new(#name, identifiers.clone()));
+            };
+        }
+        // otherwise:
+
+        let head = stmts[0].clone();
+        let body = self.collect_options(stmts[1..].to_vec().clone(), name.clone());
+
+        quote!{
+            #head {
+                #body
+            }
+        }
+
+
     }
 
     /// Function used to auto-generate the parser function, 

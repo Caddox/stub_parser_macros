@@ -94,10 +94,12 @@ pub fn to_string(tok: Token) -> Result<String, String> {
         Token::Literal(l) => Ok(format!("{}", l)),
         Token::Begin(_, _) => Ok(format!("BEGIN")),
         Token::End(_, _) => Ok(format!("END")),
+        /*
         _ => {
             let err = format!("Failed to parse {:?} as a string", tok);
             return Err(err);
         }
+        */
     }
 }
 

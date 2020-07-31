@@ -61,7 +61,6 @@ fn generate_grammar_tokens(names: &Vec<Token>) -> TokenStream {
         #[derive(Debug, Clone)]
         pub enum GrammarToken {
             #( #names ),*
-            ,Literal,
         }
     }
 }

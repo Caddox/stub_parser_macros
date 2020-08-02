@@ -14,7 +14,7 @@
 //!             Send help.
 
 use proc_macro2::{ TokenStream };
-use quote::quote;
+use quote::{quote, format_ident};
 
 use crate::flat_stream::{ FlatStream, Token, give_group_deliminator };
 use crate::token_tracker::{ TokenTracker, get_token, mark, reset, peek_as_string, get_as_string, give_max, to_string };
@@ -136,6 +136,30 @@ impl Collector {
         let mut tr = TokenTracker::new(&FlatStream::new_from_tokens(toks));
         let mut options = vec![];
 
+        let current_options = self.rule_gen_interior(&mut tr, working_name.clone())?;
+
+        for item in current_options {
+            let composed = self.collect_options(item.clone(), name.clone());
+            options.push(
+                quote!{
+                    let pos = mark(&mut tracker);
+                    #composed
+                    reset(&mut tracker, pos);
+                    identifiers.clear();
+                }
+            )
+        }
+
+        Ok(options)
+    }
+
+    /// Helper function used to abstract all the work away from making a rule.
+    /// This separation allows us to call back and forth between this function
+    /// and the parenthesis wrapper function to ensure nested rules get generated
+    /// correctly.
+    fn rule_gen_interior(&mut self, mut tr: &mut TokenTracker, name: Token) -> Result<Vec<Vec<TokenStream>>, String> {
+        let mut output = vec![];
+
         while mark(&mut tr) < give_max(&mut tr) {
             let mut current_option = vec![];
 
@@ -153,7 +177,8 @@ impl Collector {
                     //// MATCH IDENTIFIERS ////
                     if peek_as_string(&mut tr)? == String::from("BEGIN") {
                         //reset(&mut tr, pos);
-                        options.push(self.make_identifier_option(tr.clone(), working_name.clone())); // Make an option that was given as an identifier
+                        //output.push(self.make_identifier_option(tr.clone(), name.clone())); // Make an option that was given as an identifier
+                        current_option.push(self.make_identifier_option(tr.clone())); // Make an option that was given as an identifier
 
                         // There may be more identifiers in sequence after this, so skip to the end of those...
                         while peek_as_string(&mut tr)? != String::from("|") 
@@ -176,7 +201,7 @@ impl Collector {
 
                     // Grab the paren group to keep for later
                     let paren_group = get_token(&mut tr)?;
-                    println!("Parent paren group is {:?}", paren_group);
+                    //println!("Parent paren group is {:?}", paren_group);
 
                     let mut end_count = 1;
                     while end_count != 0 {
@@ -190,12 +215,12 @@ impl Collector {
                         }
 
                         internals.push(end.clone());
-                        println!("Internal object is {:?}", end);
+                        //println!("Internal object is {:?}", end);
                     }
 
                     // Eat trailing end token.
                     let _end = internals.pop().unwrap();
-                    println!("End is {:?}", _end);
+                    //println!("End is {:?}", _end);
 
                     
                     // Iterate to the end of the group, and see look for the modifier token.
@@ -211,14 +236,25 @@ impl Collector {
                         modifier_token = _end.clone();
                     }
 
-                    println!("Modifier is {:?}", modifier_token.clone());
-                    println!("Internals are {:?}", internals);
+                    //println!("Modifier is {:?}", modifier_token.clone());
+                    //println!("Internals are {:?}", internals);
 
-                   // options.push(self.make_paren_group_option(paren_group.clone(),
+                    // options.push(self.make_paren_group_option(paren_group.clone(),
+                    let nested_items = self.make_paren_group_option(paren_group.clone(),
+                        internals.clone(),
+                        modifier_token.clone(),
+                        name.clone())?;
+ 
+                    /*
                     current_option.push(self.make_paren_group_option(paren_group.clone(),
                         internals.clone(),
                         modifier_token.clone(),
-                        working_name.clone())?);
+                        name.clone())?);
+                        */
+    
+                    for internal in nested_items {
+                        current_option.push(internal);
+                    }
                      
                     
                     continue;
@@ -240,30 +276,10 @@ impl Collector {
                 let _null = get_token(&mut tr);
             }
 
-      
-            if current_option.len() != 0 {
-                //options.push(self.make_option(current_option, working_name.clone()));
-                let composed = self.collect_options(current_option.clone(), working_name.clone());
-                options.push(
-                    quote!{
-                        let pos = mark(&mut tracker);
-                        #composed
-                        reset(&mut tracker, pos);
-                        identifiers.clear();
-                    }
-                )
-
-            }
-
+            output.push(current_option);
         }
 
-        /*
-        for r in options.clone() {
-            println!("RULE: {:}", r);
-        }
-        */
-        //println!("Rules produced: {:?}", options);
-        Ok(options)
+        Ok(output.clone())
     }
 
     /// This function is a wrapper for options that arrive with in groups of parenthesis. 
@@ -271,216 +287,165 @@ impl Collector {
     /// subgroups.
     /// 
     /// Basically, its more complexity and I'm not sure if I know what to do here.
-    fn make_paren_group_option(&mut self, group: Token, internals: Vec<Token>, modifier: Token, name: Token) -> Result<TokenStream, String> {
+    fn make_paren_group_option(&mut self, group: Token, internals: Vec<Token>, modifier: Token, name: Token) -> Result<Vec<TokenStream>, String> {
         // Im really not sure how to do this. . . 
 
         // Send the internals to the rule maker.
-        let internal_rule = self.generate_rule(internals.clone(), name.clone())?;
-        println!("============================= Using the rule method =============================");
-
-        for rule in internal_rule.clone() {
-            println!("Rule: {:}", rule.to_string());
-        }
-        println!("============================= Done =============================");
-
-        /*
-         * Basically, what we need to do is treat each paren grouping as it's own individual grouping,
-         * with some extra possibilities. Lets walk the possibilities:
-         * A) No modifier token: We can treat the items in the paren as its own tree. No
-         *  further action is needed.
-         * B) * as modifier: Match zero or multiple. Add a loop of some kind I suppose.
-         * C) + as modifier: Match one or more tokens. Again, we have to loop.
-         * 
-         * Additionally, the type of parenthesis matter too. Normal '(' and ')' are simply a match,
-         * where as '[' and ']' are an optional match which should not affect the outcome if it is not present.
-         */
-
         let mut tr = TokenTracker::new(&FlatStream::new_from_tokens(internals.clone()));
+        //let internal_rule = self.rule_gen_interior(&mut tr, name.clone())?;
+        //println!("===================== Within {:} =====================", quote!(#name).to_string());
 
-        let mut matches = vec![]; // Holds all match groups.
-        let mut current_group = vec![];
-        // Iterate over the given internal token list and group the tokens.
-        while !peek_as_string(&mut tr).is_err() {
+        // Iterate over the internals; generate statements for each.
+
+        let mut all_options = vec![];
+        let mut current_option = vec![];
+        while mark(&mut tr) < give_max(&mut tr) {
             if peek_as_string(&mut tr)? == String::from("|") {
-                // Skip this token.
+                all_options.push(current_option.clone());
+                current_option.clear();
+
+                // Eat trailing '|'
                 let _null = get_token(&mut tr);
-                matches.push(current_group.clone());
-                current_group.clear();
             }
-            else if peek_as_string(&mut tr)? == String::from("BEGIN") { // We have a nested grouping!
-                println!("WITHIN THE FUCKING THING YYOURE WORKING ON DIPSHIT");
-                let mut nested_internals = vec![];
+
+            // If there's a group, parse it as another group.
+            if peek_as_string(&mut tr)? == String::from("BEGIN") {
+
+                let mut internals = vec![];
+
+                // Grab the paren group to keep for later
+                let paren_group = get_token(&mut tr)?;
+                //println!("Parent paren group is {:?}", paren_group);
+
                 let mut end_count = 1;
+                while end_count != 0 {
+                    let end = get_token(&mut tr)?; 
 
-                let group_token = get_token(&mut tr)?;
+                    if to_string(end.clone())? == String::from("BEGIN") {
+                        end_count += 1;
+                    }
+                    else if to_string(end.clone())? == String::from("END") {
+                        end_count -=1;
+                    }
 
-                while end_count != 0 && !peek_as_string(&mut tr).is_err() {
-                    let current_token = get_token(&mut tr)?;
-                    println!("Nested internal token: {:?}", current_token.clone());
-
-                    if to_string(current_token.clone())? == String::from("BEGIN") { end_count += 1; }
-                    if to_string(current_token.clone())? == String::from("END") { end_count -= 1; }
-
-                    nested_internals.push(current_token.clone());
+                    internals.push(end.clone());
+                    //println!("Internal object is {:?}", end);
                 }
-                // Pop trailing end.
-                let _end = nested_internals.pop().unwrap();
 
-                // Extract the potential modifier token.
+                // Eat trailing end token.
+                let _end = internals.pop().unwrap();
+                //println!("End is {:?}", _end);
+
+                    
+                // Iterate to the end of the group, and see look for the modifier token.
                 let mod_pos = mark(&mut tr);
                 let modifier_token: Token;
                 if peek_as_string(&mut tr).is_ok() &&
                 (peek_as_string(&mut tr)? == String::from("*") || 
                 peek_as_string(&mut tr)? == String::from("+")) { // Check that there is actually a token there.
-                    modifier_token = get_token(&mut tr)?; // If not, don't walk off the end and cause a panic.
-                    println!("Internal modifier is {:?}", modifier_token.clone());
+                    modifier_token = get_token(&mut tr)? // If not, don't walk off the end and cause a panic.
                 }
                 else {
                     reset(&mut tr, mod_pos); // Back the parser up to before the mod check
                     modifier_token = _end.clone();
-                    println!("Internal modifier is {:?}", modifier_token.clone());
                 }
 
-                println!("Nested internals are {:?}", nested_internals);
-                current_group.push((self.make_paren_group_option(group_token.clone(),
-                    nested_internals.clone(),
+                //println!("Modifier is {:?}", modifier_token.clone());
+                //println!("Internals are {:?}", internals);
+
+                // options.push(self.make_paren_group_option(paren_group.clone(),
+                let nested_items = self.make_paren_group_option(paren_group.clone(),
+                    internals.clone(),
                     modifier_token.clone(),
-                    name.clone())?, true));
+                    name.clone())?;
+ 
+                /*()
+                current_option.push(self.make_paren_group_option(paren_group.clone(),
+                    internals.clone(),
+                    modifier_token.clone(),
+                    name.clone())?);
+                    */
 
-                continue; // FUCK THIS GODDAMN CONTINUE RIGHT HERE
-                // AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH
-            }
-            let too_flat = get_token(&mut tr)?;
-            let non_flat = quote!(#too_flat);
-            //current_group.push(get_token(&mut tr)?);
-            current_group.push((non_flat, false));
-        }
-
-        matches.push(current_group);
-
-        // We have a list of lists. We know that each item is one of the following:
-        // 1) Another identifier from the grammar definition. Tuple of (item, false)
-        // 2) A raw char, i.e. ','. Tuple of (item, false)
-        // 3) A paren group which has been expanded by this point (recursively) Tuple of (expanded, true)
-        
-        // From this list, we need to transform each list into one contiguous TokenStream item,
-        // which will be inserted as needed.
-        let mut tok_stream_finals: Vec<TokenStream> = vec![];
-
-        for group in matches.clone() {
-            let mut out = quote!();
-            for (item, check) in group.clone() {
-                if check == false {
-                    out = quote!{
-                        #out
-                        identifiers.push(expect(&mut tracker, #item));
-                        if identifiers.last().cloned().unwrap().is_none() { 
-                            while identifiers.len() != reversed_size { // Pop all the previously matched tokens to preserve nirvana.
-                                let _null = identifiers.pop();
-                            }
-                            reset(&mut tracker, fallback_pos);
-                            //identifiers.pop();
-                            break;
-                        }
-                    };
+                for internal in nested_items {
+                    current_option.push(internal);
                 }
-                else {
-                    out = quote!{
-                        #out
-                        #item
-                    };
-                }
+                     
+                    
+                // The existence of this continue is questionable.
+                continue;
             }
 
-            tok_stream_finals.push(out.clone());
+            current_option.push(self.make_identifier_pusher(get_token(&mut tr)?));
         }
 
-        println!("BUILDING Loop, matches is {:?}", matches);
-    
-        let mut inner = quote!();
+        all_options.push(current_option);
 
-        match to_string(modifier.clone())?.as_str() {
-            "*" => {
-                inner = quote!{
+        let mut output = vec![];
+        let mut iteration:usize = 0;
+        for item in all_options {
+            let out: TokenStream;
+            // TODO: This may actually fail in rare cases,
+            // look into methods for fixing it (i.e., fast hash of some kind?)
+            let fb_p = format_ident!("fallback_pos_{:}_{:}", iteration, internals.len());
+            let fb_s = format_ident!("fallback_size_{:}_{:}", iteration, internals.len());
+            if to_string(modifier.clone())? == String::from("*") {
+                out = quote!{
+                    loop {
+                        let #fb_p = mark(&mut tracker);
+                        let #fb_s = identifiers.len();
                     #(
-                    loop {
-                        let reversed_size = identifiers.len();
-                        let fallback_pos = mark(&mut tracker); // In the case of matching part of a group, ensure we can back up sufficiently.
-
-                        #tok_stream_finals
-                        /*
-                        if identifiers.last().cloned().unwrap().is_none() { 
-                            while identifiers.len() != reversed_size { // Pop all the previously matched tokens to preserve nirvana.
-                                let _null = identifiers.pop();
-                            }
-                            reset(&mut tracker, fallback_pos);
-                            //identifiers.pop();
+                        #item
+                        if identifiers.last().cloned().unwrap().is_none() {
+                            while identifiers.len() != #fb_s {identifiers.pop();}
+                            reset(&mut tracker, #fb_p);
                             break;
                         }
-                        */
+                    )*}
+                    // In the case that nothing apparently exists, do the following.
+                    /*
+                    if identifiers.len() != 0 {
+                        return Ok(AstNode::new(#name, identifiers.clone()));
                     }
-                    )*
-                };
-            },
-
-            "+" => {},
-            _ => { // Match once as per usual.
-                inner = quote!{
-                    #(#tok_stream_finals)*
-                }
-
-            }         
-        }
-
-        // Last but not least, matchup with the paren type.
-        match give_group_deliminator(group).as_str() {
-            "[" => {
-                inner = quote!{
-                    hey_this_is_where_we_are(#inner);
-                }
-            },
-            _ => {},
-        }
-        /*+
-        if to_string(modifier.clone())? == String::from("*") {
-            for group in matches {
-                println!("Current group is {:?}", group.clone());
-                inner = quote!{
-                    #inner
-                    loop {
-                        let reversed_size = identifiers.len();
-                        let fallback_pos = mark(&mut tracker); // In the case of matching part of a group, ensure we can back up sufficiently.
-
-                        #(identifiers.push(expect(&mut tracker, &#group));
-                        if identifiers.last().cloned().unwrap().is_none() { 
-                            while identifiers.len() != reversed_size { // Pop all the previously matched tokens to preserve nirvana.
-                                let _null = identifiers.pop();
-                            }
-                            reset(&mut tracker, fallback_pos);
-                            //identifiers.pop();
-                            break;
-                        }
-                        )*
-                    }
+                    */
                 };
             }
-        }
-        else if to_string(modifier.clone())? == String::from("+") {
+            else if give_group_deliminator(group.clone()) == String::from("[") ||
+            to_string(modifier.clone())? == String::from("?") {
+                out = quote!{
+                    #(
+                        #item
+                        if identifiers.last().cloned().unwrap().is_none() {
+                            // Back up the marker by one
+                            let back_one = mark(&mut tracker) - 1;
+                            reset(&mut tracker, back_one);
+                            identifiers.pop(); // Pop the failed option and move on
+                        }
+                    )*
+                }     
+            }
+            else {
+                out = quote!{
+                    #(
+                        #item
+                        if identifiers.last().cloned().unwrap().is_none() {
+                            return Err(());
+                        }
+                    )*
+                }
+            }
+
+            iteration += 1;
+            output.push(out);
 
         }
-        */
-
-        Ok(quote!{
-            #inner
-        })
-        //unimplemented!("Paren grouping rules are STILL not done. :^)");
+        Ok(output)
     }
 
     /// Making an identifier option is similar, but different.
     /// For starters, an identifier matches a tokens *.identifier field through
     /// its given type. This means that we need to grab a group of tokens, which
     /// while more convenient, means we have to change how we proceed.
-    fn make_identifier_option(&mut self, mut tracker: TokenTracker, name: Token) -> TokenStream {
+    fn make_identifier_option(&mut self, mut tracker: TokenTracker) -> TokenStream {
         // So for this to work, the contents inside of the parentheses are all going to be
         // equivalent to whatever the Token.identifier field is. For us, that is ::TokenType.
         // So if something is within the parens, it is matched and will be overloaded for later.
@@ -497,12 +462,13 @@ impl Collector {
         let stmt = self.make_single_if_statement(group.clone());
 
         quote!{
-            identifiers.clear();
-            let pos = mark(&mut tracker);
-            #stmt {
-                return Ok(AstNode::new(#name, identifiers.clone()));
-            }
-            reset(&mut tracker, pos);
+            //identifiers.clear();
+            //let pos = mark(&mut tracker);
+            //#stmt {
+                //return Ok(AstNode::new(#name, identifiers.clone()));
+            //}
+            //reset(&mut tracker, pos);
+            #stmt
         }
     }
 
@@ -515,10 +481,20 @@ impl Collector {
     /// 
     /// Additionally, the identifier used is returned for later use with the AstNode.
     fn make_single_if_statement(&mut self, tok: Token) -> TokenStream {
+        let ident = self.make_identifier_pusher(tok.clone());
 
         quote!{
-            identifiers.push(expect(&mut tracker, &#tok));
+            //identifiers.push(expect(&mut tracker, &#tok));
+            #ident
             if identifiers.last().cloned().unwrap().is_some() // What the fuck.
+        }
+    }
+
+    /// Helper function used to generate just the identifier to be pushed
+    /// when given a token.
+    fn make_identifier_pusher(&mut self, tok: Token) -> TokenStream {
+        quote!{
+            identifiers.push(expect(&mut tracker, &#tok));
         }
     }
 
@@ -597,6 +573,7 @@ impl Collector {
                     let test = get_token(&mut tracker);
 
                     if test.is_err() { // Ensure that an error works correctly.
+                        println!("Returned None (test.is_err())");
                         return None
                     }
                 
@@ -604,8 +581,10 @@ impl Collector {
                     let lit_str = literal.to_string();
                     
                     if top.lexeme == lit_str {
+                        println!("Returned Some");
                         return Some(AstOrToken::Tok(top.clone()));
                     }
+                    println!("Returned none");
                     return None;
                 }
                 if let Some(tok_type) = expected.downcast_ref::<TokenType> () { // Token

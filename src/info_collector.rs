@@ -252,9 +252,19 @@ impl Collector {
                         name.clone())?);
                         */
     
+                    let mut out = quote!{};
+                    for internal in nested_items {
+                        out = quote!{
+                            #out
+                            #internal
+                        }
+                    }
+                    current_option.push(out);
+                    /*
                     for internal in nested_items {
                         current_option.push(internal);
                     }
+                    */
                      
                     
                     continue;
@@ -366,9 +376,20 @@ impl Collector {
                     name.clone())?);
                     */
 
+                let mut out = quote!{};
+                for internal in nested_items {
+                    out = quote!{
+                        #out
+                        #internal
+                    }
+                }
+                current_option.push(out);
+
+                /*
                 for internal in nested_items {
                     current_option.push(internal);
                 }
+                */
                      
                     
                 // The existence of this continue is questionable.
@@ -382,6 +403,66 @@ impl Collector {
 
         let mut output = vec![];
         let mut iteration:usize = 0;
+        let mut inside = quote!();
+        let mut out = quote!();
+        let fb_p = format_ident!("fallback_pos_{:}", internals.len());
+        let fb_s = format_ident!("fallback_size_{:}", internals.len());
+        for item in all_options {
+            if to_string(modifier.clone())? == String::from("*") {
+                inside = quote!{
+                    #inside
+                    #(
+                        #item
+                        if identifiers.last().cloned().unwrap().is_none() {
+                            while identifiers.len() != #fb_s {identifiers.pop();}
+                            reset(&mut tracker, #fb_p);
+                            break;
+                        }
+                    )*
+                };
+                out = quote!{
+                    loop {
+                        let #fb_p = mark(&mut tracker);
+                        let #fb_s = identifiers.len();
+                        #inside
+                    }
+                }
+            }
+            else if give_group_deliminator(group.clone()) == String::from("[") ||
+            to_string(modifier.clone())? == String::from("?") {
+                inside = quote!{
+                    #inside
+                    #(
+                        #item
+                        if identifiers.last().cloned().unwrap().is_none() {
+                            // Back up the marker by one
+                            let back_one = mark(&mut tracker) - 1;
+                            reset(&mut tracker, back_one);
+                            identifiers.pop(); // Pop the failed option and move on
+                        }
+                    )*
+                };
+                out = quote!{
+                    #inside
+                }
+            }
+            else {
+                inside = quote!{
+                    #inside
+                    #(
+                        #item
+                        if identifiers.last().cloned().unwrap().is_none() {
+                            return Err(());
+                        }
+                    )*
+                };
+                out = quote!(#inside);
+            }
+        }
+
+        output.push(out);
+        Ok(output)
+        /*
         for item in all_options {
             let out: TokenStream;
             // TODO: This may actually fail in rare cases,
@@ -438,7 +519,9 @@ impl Collector {
             output.push(out);
 
         }
+
         Ok(output)
+        */
     }
 
     /// Making an identifier option is similar, but different.
@@ -531,11 +614,14 @@ impl Collector {
     fn generate_parser(&self) -> TokenStream {
         let top_name = &self.names[0];
         quote!{
-            pub fn parser(mut tracker: &mut TokenTracker) -> Result<Vec<AstOrToken>, ()> {
-                let mut res = vec![];
+            pub fn parser(mut tracker: &mut TokenTracker) -> Option<AstOrToken> {
+                //let mut res = vec![];
 
                 let mut tree = expect(&mut tracker, &#top_name);
 
+                tree
+
+                /*
                 while tree.is_some() {
                     res.push(tree.unwrap());
 
@@ -543,6 +629,7 @@ impl Collector {
                 }
 
                 Ok(res)
+                */
             }
         }
     }

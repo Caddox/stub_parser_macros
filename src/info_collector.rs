@@ -531,18 +531,21 @@ impl Collector {
     fn generate_parser(&self) -> TokenStream {
         let top_name = &self.names[0];
         quote!{
-            pub fn parser(mut tracker: &mut TokenTracker) -> Result<Vec<AstOrToken>, ()> {
-                let mut res = vec![];
+            pub fn parser(mut tracker: &mut TokenTracker) -> Option<AstOrToken> {
+                //let mut res = vec![];
 
                 let mut tree = expect(&mut tracker, &#top_name);
+                tree
+                /*
 
                 while tree.is_some() {
                     res.push(tree.unwrap());
 
                     tree = expect(&mut tracker, &#top_name);
                 }
+                */
 
-                Ok(res)
+                //Ok(res)
             }
         }
     }

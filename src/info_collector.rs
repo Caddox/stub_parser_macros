@@ -414,9 +414,13 @@ impl Collector {
                     #(
                         #item
                         if identifiers.last().cloned().unwrap().is_none() {
-                            while identifiers.len() != #fb_s {identifiers.pop();}
-                            reset(&mut tracker, #fb_p);
-                            break;
+                            let back_one = mark(&mut tracker) - 1;
+                            reset(&mut tracker, back_one);
+                            identifiers.pop(); // Pop the failed option and move on
+                        }
+                        else {
+                            get_got = true;
+                            continue;
                         }
                     )*
                 };
@@ -424,7 +428,13 @@ impl Collector {
                     loop {
                         let #fb_p = mark(&mut tracker);
                         let #fb_s = identifiers.len();
+                        let mut get_got = false;
                         #inside
+                        if !get_got {
+                            while identifiers.len() != #fb_s {identifiers.pop();}
+                            reset(&mut tracker, #fb_p);
+                            break;
+                        }
                     }
                 }
             }

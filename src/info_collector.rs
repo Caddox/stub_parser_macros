@@ -402,7 +402,6 @@ impl Collector {
         all_options.push(current_option);
 
         let mut output = vec![];
-        let mut iteration:usize = 0;
         let mut inside = quote!();
         let mut out = quote!();
         let fb_p = format_ident!("fallback_pos_{:}", internals.len());
@@ -414,15 +413,18 @@ impl Collector {
                     #(
                         #item
                         if identifiers.last().cloned().unwrap().is_none() {
-                            let back_one = mark(&mut tracker) - 1;
-                            reset(&mut tracker, back_one);
+                            //let back_one = mark(&mut tracker) - 1;
+                            //reset(&mut tracker, back_one);
                             identifiers.pop(); // Pop the failed option and move on
+                            //println!("Backing up inside of the loop. . . ");
                         }
                         else {
                             get_got = true;
-                            continue;
                         }
                     )*
+                    if get_got {
+                        continue;
+                    }
                 };
                 out = quote!{
                     loop {

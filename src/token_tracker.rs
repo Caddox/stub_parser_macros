@@ -102,14 +102,3 @@ pub fn to_string(tok: Token) -> Result<String, String> {
         */
     }
 }
-
-/// If the token has a size, extract it out.
-fn get_token_size(tok: Token) -> Result<usize, String> {
-    match tok {
-        Token::Begin(_, size) => Ok(size),
-        _ => {
-            let err = format!("There is no size value for the given token: {:?}", tok);
-            return Err(err);
-        }
-    }
-}

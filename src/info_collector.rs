@@ -412,13 +412,14 @@ impl Collector {
                     #inside
                     #(
                         #item
-                        if identifiers.last().cloned().unwrap().is_none() {
+                        //if identifiers.last().cloned().unwrap().is_none() {
                             //let back_one = mark(&mut tracker) - 1;
                             //reset(&mut tracker, back_one);
-                            identifiers.pop(); // Pop the failed option and move on
+                            //identifiers.pop(); // Pop the failed option and move on
                             //println!("Backing up inside of the loop. . . ");
-                        }
-                        else {
+                        //}
+                        //else {
+                        if identifiers.last().cloned().unwrap().is_some() {
                             get_got = true;
                         }
                     )*
@@ -665,6 +666,28 @@ impl Collector {
                         Err(_) => { return None }
                     }
                     //return Some(AstOrToken::Ast(match_rule(&mut tracker, grammar)));
+                }
+                if let Some(string_literal) = expected.downcast_ref::<&str>() { // Literal string of tokens to match
+                    // ex: rule := identifier "->" option;
+                    println!("MATCHING STRING LITERAL {:?}", string_literal);
+
+                    let test = get_token(&mut tracker);
+
+                    if test.is_err() { // Ensure that an error works correctly.
+                        println!("Returned None (test.is_err())");
+                        return None
+                    }
+                
+                    let top = test.unwrap();
+                    let lit_str = string_literal.to_string();
+                    
+                    if top.lexeme == lit_str {
+                        println!("Returned Some");
+                        return Some(AstOrToken::Tok(top.clone()));
+                    }
+                    println!("Returned none");
+                    return None;
+
                 }
                 if let Some(literal) = expected.downcast_ref::<char>() { // Token
                     println!("MATCHING LITERAL {:?}", literal);

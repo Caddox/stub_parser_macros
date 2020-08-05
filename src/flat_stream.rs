@@ -1,19 +1,21 @@
-/// File: flat_stream.rs
-/// Purpose: Struct definition files.
-/// Defines: FlatStream, Token
-///     FlatStream: A struct used to convert from a tree-based TokenStream
-///                 to vector.
-///     Token: A struct used to represent individual tokens in a TokenStream
-/// Description: This file contains definitions needed to provide a FlatStream
-///     of tokens. This is more of a helper struct, as it serves as a middle
-///     ground between a proc_macro TokenStream and a vector of tokens.
+/// *************************************************************************** ///
+/// File: flat_stream.rs                                                        ///
+/// Purpose: Struct definition files.                                           ///
+/// Defines: FlatStream, Token                                                  ///
+///     FlatStream: A struct used to convert from a tree-based TokenStream      ///
+///                 to vector.                                                  ///
+///     Token: A struct used to represent individual tokens in a TokenStream    ///
+/// Description: This file contains definitions needed to provide a FlatStream  ///
+///     of tokens. This is more of a helper struct, as it serves as a middle    ///
+///     ground between a proc_macro TokenStream and a vector of tokens.         ///
+/// *************************************************************************** ///
 
-use proc_macro2::{ TokenStream, TokenTree, Ident, Literal, Punct, Delimiter, Group, Span };
-use quote::{TokenStreamExt};
+use proc_macro2::{Delimiter, Group, Ident, Literal, Punct, Span, TokenStream, TokenTree};
+use quote::TokenStreamExt;
 
 #[derive(Debug, Clone)]
 pub struct FlatStream {
-    pub tokens: Vec<Token>
+    pub tokens: Vec<Token>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,7 +43,7 @@ impl quote::ToTokens for Token {
             Token::Begin(g, _) => {
                 tokens.append(g.clone());
             }
-            _ => { }, // Do nothing?
+            _ => {} // Do nothing?
         }
     }
 }
@@ -54,14 +56,15 @@ impl FlatStream {
         for tree in stream {
             flatten(&mut tokens, tree);
         }
-        FlatStream {tokens}
+        FlatStream { tokens }
     }
 
     pub fn new_from_tokens(toks: Vec<Token>) -> FlatStream {
-        FlatStream{ tokens: toks.clone() }
+        FlatStream {
+            tokens: toks.clone(),
+        }
     }
 }
-
 
 /// Helper function to flatten a TokenStream
 fn flatten(tokens: &mut Vec<Token>, tree: TokenTree) {
@@ -91,24 +94,16 @@ pub fn give_group_deliminator(token: Token) -> String {
     match token {
         Token::Begin(g, _) => {
             group = g;
-        },
+        }
         _ => {
             return String::from("Token is not of type Begin.");
         }
     }
 
     match group.delimiter() {
-        proc_macro2::Delimiter::Parenthesis => {
-            String::from("(")
-        },
-        proc_macro2::Delimiter::Brace => {
-            String::from("{")
-        },
-        proc_macro2::Delimiter::Bracket => {
-            String::from("[")
-        },
-        proc_macro2::Delimiter::None => {
-            String::from("None")
-        }
+        proc_macro2::Delimiter::Parenthesis => String::from("("),
+        proc_macro2::Delimiter::Brace => String::from("{"),
+        proc_macro2::Delimiter::Bracket => String::from("["),
+        proc_macro2::Delimiter::None => String::from("None"),
     }
 }

@@ -13,12 +13,14 @@
 //! I see the &mut tr's in my sleep.
 //!             Send help.
 
-use proc_macro2::{ TokenStream };
-use quote::{quote, format_ident};
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
 
-use crate::flat_stream::{ FlatStream, Token, give_group_deliminator };
-use crate::token_tracker::{ TokenTracker, get_token, mark, reset, peek_as_string, get_as_string, give_max, to_string };
 use crate::code_gen::generate_structures;
+use crate::flat_stream::{give_group_deliminator, FlatStream, Token};
+use crate::token_tracker::{
+    get_as_string, get_token, give_max, mark, peek_as_string, reset, to_string, TokenTracker,
+};
 
 #[derive(Debug, Clone)]
 pub struct Collector {
@@ -39,7 +41,10 @@ impl Collector {
         let tracker = TokenTracker::new(&flattened);
 
         Collector {
-            rules, terminals, names, tracker
+            rules,
+            terminals,
+            names,
+            tracker,
         }
     }
 
@@ -59,8 +64,16 @@ impl Collector {
             let colon_check = get_as_string(&mut self.tracker)?; // Should always be a colon
             let equ_check = get_as_string(&mut self.tracker)?; // Should always be an equals sign.
 
-            assert_eq!(colon_check, String::from(":"), "Assignment statement was malformed");
-            assert_eq!(equ_check, String::from("="), "Assignment statement was malformed");
+            assert_eq!(
+                colon_check,
+                String::from(":"),
+                "Assignment statement was malformed"
+            );
+            assert_eq!(
+                equ_check,
+                String::from("="),
+                "Assignment statement was malformed"
+            );
 
             // Grab the rest of the rules
             let mut temp = vec![];
@@ -82,15 +95,16 @@ impl Collector {
         for rule in mid_rules {
             let name = self.names[index].clone();
             let test = self.generate_rule(rule, name);
-            match test{
-                Ok(v) => { // If okay, merge all the rules into one big rule for one vector slot.
-                    let individual_rules = quote!{
+            match test {
+                Ok(v) => {
+                    // If okay, merge all the rules into one big rule for one vector slot.
+                    let individual_rules = quote! {
                         let mut identifiers: Vec<Option<AstOrToken>> = vec![];
-                        #(#v)* 
+                        #(#v)*
                         return Err(());
                     };
                     self.rules.push(individual_rules);
-                }, 
+                }
                 Err(m) => {
                     let err = format!("Error generating parser: {}", m);
                     panic!(err);
@@ -99,14 +113,12 @@ impl Collector {
             index += 1;
         }
 
-
         println!("======> Done generating rules.");
         //println!("======> Rules made: {:?}", self.rules.clone()[0]);
 
         //println!("Running boilerplate generation. . . ");
         let boilerplate = generate_structures(&self.names);
         //println!("Boilerplate generated: {:}", boilerplate);
-
 
         ///// FINAL GLUE SECTION /////
         // From here, generate more code, append it all together, and return it out.
@@ -117,7 +129,7 @@ impl Collector {
         let match_f = self.generate_match_func();
         //println!("Match func generated: {:}", match_f);
 
-        Ok(quote!{
+        Ok(quote! {
             #boilerplate
             #parser
             #expect
@@ -140,14 +152,12 @@ impl Collector {
 
         for item in current_options {
             let composed = self.collect_options(item.clone(), name.clone());
-            options.push(
-                quote!{
-                    let pos = mark(&mut tracker);
-                    #composed
-                    reset(&mut tracker, pos);
-                    identifiers.clear();
-                }
-            )
+            options.push(quote! {
+                let pos = mark(&mut tracker);
+                #composed
+                reset(&mut tracker, pos);
+                identifiers.clear();
+            })
         }
 
         Ok(options)
@@ -157,7 +167,11 @@ impl Collector {
     /// This separation allows us to call back and forth between this function
     /// and the parenthesis wrapper function to ensure nested rules get generated
     /// correctly.
-    fn rule_gen_interior(&mut self, mut tr: &mut TokenTracker, name: Token) -> Result<Vec<Vec<TokenStream>>, String> {
+    fn rule_gen_interior(
+        &mut self,
+        mut tr: &mut TokenTracker,
+        name: Token,
+    ) -> Result<Vec<Vec<TokenStream>>, String> {
         let mut output = vec![];
 
         while mark(&mut tr) < give_max(&mut tr) {
@@ -165,14 +179,14 @@ impl Collector {
 
             // Loop over list until an 'or' symbol (the '|') is hit or the end of the token list is reached.
             while !peek_as_string(&mut tr).is_err()            // *.is_err needs to be first for short-circuit evaluation.
-            && peek_as_string(&mut tr)? != String::from("|") {
+            && peek_as_string(&mut tr)? != String::from("|")
+            {
                 println!("Looking at: {:}", peek_as_string(&mut tr)?);
                 // Look for the token sequence of #( and call the requisite subroutine.
                 if peek_as_string(&mut tr)? == String::from("#") {
                     let pos = mark(&mut tr);
                     let _temp = get_token(&mut tr)?; // Eat the '#' token, we dont need it.
-                     // Pseudo two token lookahead
-
+                                                     // Pseudo two token lookahead
 
                     //// MATCH IDENTIFIERS ////
                     if peek_as_string(&mut tr)? == String::from("BEGIN") {
@@ -181,16 +195,17 @@ impl Collector {
                         current_option.push(self.make_identifier_option(tr.clone())); // Make an option that was given as an identifier
 
                         // There may be more identifiers in sequence after this, so skip to the end of those...
-                        while peek_as_string(&mut tr)? != String::from("|") 
-                        && peek_as_string(&mut tr)? != String::from("END") {
+                        while peek_as_string(&mut tr)? != String::from("|")
+                            && peek_as_string(&mut tr)? != String::from("END")
+                        {
                             let _null = get_as_string(&mut tr)?;
                         }
 
                         // Eat the end token
                         let _null = get_token(&mut tr);
                         continue;
-                    }
-                    else { // Was not an identifier.
+                    } else {
+                        // Was not an identifier.
                         reset(&mut tr, pos);
                     }
                 }
@@ -205,13 +220,12 @@ impl Collector {
 
                     let mut end_count = 1;
                     while end_count != 0 {
-                        let end = get_token(&mut tr)?; 
+                        let end = get_token(&mut tr)?;
 
                         if to_string(end.clone())? == String::from("BEGIN") {
                             end_count += 1;
-                        }
-                        else if to_string(end.clone())? == String::from("END") {
-                            end_count -=1;
+                        } else if to_string(end.clone())? == String::from("END") {
+                            end_count -= 1;
                         }
 
                         internals.push(end.clone());
@@ -222,16 +236,16 @@ impl Collector {
                     let _end = internals.pop().unwrap();
                     //println!("End is {:?}", _end);
 
-                    
                     // Iterate to the end of the group, and see look for the modifier token.
                     let mod_pos = mark(&mut tr);
                     let modifier_token: Token;
-                    if peek_as_string(&mut tr).is_ok() &&
-                    (peek_as_string(&mut tr)? == String::from("*") || 
-                    peek_as_string(&mut tr)? == String::from("+")) { // Check that there is actually a token there.
+                    if peek_as_string(&mut tr).is_ok()
+                        && (peek_as_string(&mut tr)? == String::from("*")
+                            || peek_as_string(&mut tr)? == String::from("+"))
+                    {
+                        // Check that there is actually a token there.
                         modifier_token = get_token(&mut tr)? // If not, don't walk off the end and cause a panic.
-                    }
-                    else {
+                    } else {
                         reset(&mut tr, mod_pos); // Back the parser up to before the mod check
                         modifier_token = _end.clone();
                     }
@@ -240,29 +254,28 @@ impl Collector {
                     //println!("Internals are {:?}", internals);
 
                     // options.push(self.make_paren_group_option(paren_group.clone(),
-                    let nested_items = self.make_paren_group_option(paren_group.clone(),
+                    let nested_items = self.make_paren_group_option(
+                        paren_group.clone(),
                         internals.clone(),
                         modifier_token.clone(),
-                        name.clone())?;
- 
-    
-                    let mut out = quote!{};
+                        name.clone(),
+                    )?;
+
+                    let mut out = quote! {};
                     for internal in nested_items {
-                        out = quote!{
+                        out = quote! {
                             #out
                             #internal
                         }
                     }
                     current_option.push(out);
-                     
-                    
+
                     continue;
-                    
                 }
 
-                // We need to alter this in such a way that 
+                // We need to alter this in such a way that
                 // paren groups can be interpolated within normal symbols.
-                // Right now, normal symbols are being pushed to current_option and 
+                // Right now, normal symbols are being pushed to current_option and
                 // being turned into if statements later.
                 // If we turn everything into it's relevant if statement and interpolate them
                 // together later (when '|' or ';' is seen), we can work around this.
@@ -281,13 +294,19 @@ impl Collector {
         Ok(output.clone())
     }
 
-    /// This function is a wrapper for options that arrive with in groups of parenthesis. 
+    /// This function is a wrapper for options that arrive with in groups of parenthesis.
     /// This allows us to add modifiers as we see fit, or even create matching
     /// subgroups.
-    /// 
+    ///
     /// Basically, its more complexity and I'm not sure if I know what to do here.
-    fn make_paren_group_option(&mut self, group: Token, internals: Vec<Token>, modifier: Token, name: Token) -> Result<Vec<TokenStream>, String> {
-        // Im really not sure how to do this. . . 
+    fn make_paren_group_option(
+        &mut self,
+        group: Token,
+        internals: Vec<Token>,
+        modifier: Token,
+        name: Token,
+    ) -> Result<Vec<TokenStream>, String> {
+        // Im really not sure how to do this. . .
 
         // Make a new token stream out of the internals.
         let mut tr = TokenTracker::new(&FlatStream::new_from_tokens(internals.clone()));
@@ -307,7 +326,6 @@ impl Collector {
 
             // If there's a group, parse it as another group.
             if peek_as_string(&mut tr)? == String::from("BEGIN") {
-
                 let mut internals = vec![];
 
                 // Grab the paren group to keep for later
@@ -316,13 +334,12 @@ impl Collector {
 
                 let mut end_count = 1;
                 while end_count != 0 {
-                    let end = get_token(&mut tr)?; 
+                    let end = get_token(&mut tr)?;
 
                     if to_string(end.clone())? == String::from("BEGIN") {
                         end_count += 1;
-                    }
-                    else if to_string(end.clone())? == String::from("END") {
-                        end_count -=1;
+                    } else if to_string(end.clone())? == String::from("END") {
+                        end_count -= 1;
                     }
 
                     internals.push(end.clone());
@@ -333,16 +350,16 @@ impl Collector {
                 let _end = internals.pop().unwrap();
                 //println!("End is {:?}", _end);
 
-                    
                 // Iterate to the end of the group, and see look for the modifier token.
                 let mod_pos = mark(&mut tr);
                 let modifier_token: Token;
-                if peek_as_string(&mut tr).is_ok() &&
-                (peek_as_string(&mut tr)? == String::from("*") || 
-                peek_as_string(&mut tr)? == String::from("+")) { // Check that there is actually a token there.
+                if peek_as_string(&mut tr).is_ok()
+                    && (peek_as_string(&mut tr)? == String::from("*")
+                        || peek_as_string(&mut tr)? == String::from("+"))
+                {
+                    // Check that there is actually a token there.
                     modifier_token = get_token(&mut tr)? // If not, don't walk off the end and cause a panic.
-                }
-                else {
+                } else {
                     reset(&mut tr, mod_pos); // Back the parser up to before the mod check
                     modifier_token = _end.clone();
                 }
@@ -351,20 +368,22 @@ impl Collector {
                 //println!("Internals are {:?}", internals);
 
                 // options.push(self.make_paren_group_option(paren_group.clone(),
-                let nested_items = self.make_paren_group_option(paren_group.clone(),
+                let nested_items = self.make_paren_group_option(
+                    paren_group.clone(),
                     internals.clone(),
                     modifier_token.clone(),
-                    name.clone())?;
- 
-                let mut out = quote!{};
+                    name.clone(),
+                )?;
+
+                let mut out = quote! {};
                 for internal in nested_items {
-                    out = quote!{
+                    out = quote! {
                         #out
                         #internal
                     }
                 }
                 current_option.push(out);
-                    
+
                 // The existence of this continue is questionable.
                 continue;
             }
@@ -381,7 +400,7 @@ impl Collector {
         let fb_s = format_ident!("fallback_size_{:}", internals.len());
         for item in all_options {
             if to_string(modifier.clone())? == String::from("*") {
-                inside = quote!{
+                inside = quote! {
                     #inside
                     #(
                         // Just trust me on this one.
@@ -394,7 +413,7 @@ impl Collector {
                         continue;
                     }
                 };
-                out = quote!{
+                out = quote! {
                     loop {
                         let #fb_p = mark(&mut tracker);
                         let #fb_s = identifiers.len();
@@ -407,10 +426,10 @@ impl Collector {
                         }
                     }
                 }
-            }
-            else if give_group_deliminator(group.clone()) == String::from("[") ||
-            to_string(modifier.clone())? == String::from("?") {
-                inside = quote!{
+            } else if give_group_deliminator(group.clone()) == String::from("[")
+                || to_string(modifier.clone())? == String::from("?")
+            {
+                inside = quote! {
                     #inside
                     #(
                         #item
@@ -422,12 +441,11 @@ impl Collector {
                         }
                     )*
                 };
-                out = quote!{
+                out = quote! {
                     #inside
                 }
-            }
-            else {
-                inside = quote!{
+            } else {
+                inside = quote! {
                     #inside
                     #(
                         #item
@@ -464,7 +482,7 @@ impl Collector {
 
         let stmt = self.make_single_if_statement(group.clone());
 
-        quote!{
+        quote! {
             //identifiers.clear();
             //let pos = mark(&mut tracker);
             //#stmt {
@@ -477,16 +495,16 @@ impl Collector {
 
     /// A function used to make a single if statement. Indent is used to make a unique
     /// identifier in the case of a grammar such as the following:
-    /// 
+    ///
     /// ``` expr := term '-' term ```
-    /// 
+    ///
     /// where the grammar could otherwise become ambiguous.
-    /// 
+    ///
     /// Additionally, the identifier used is returned for later use with the AstNode.
     fn make_single_if_statement(&mut self, tok: Token) -> TokenStream {
         let ident = self.make_identifier_pusher(tok.clone());
 
-        quote!{
+        quote! {
             //identifiers.push(expect(&mut tracker, &#tok));
             #ident
             if identifiers.last().cloned().unwrap().is_some() // What the fuck.
@@ -496,18 +514,18 @@ impl Collector {
     /// Helper function used to generate just the identifier to be pushed
     /// when given a token.
     fn make_identifier_pusher(&mut self, tok: Token) -> TokenStream {
-        quote!{
+        quote! {
             identifiers.push(expect(&mut tracker, &#tok));
         }
     }
 
     /// A recursive function used to collect a vector of TokenStream's into
-    /// one big nested TokenStream. Similar to macro expansion, except for 
+    /// one big nested TokenStream. Similar to macro expansion, except for
     /// recursive rather than iterative
     fn collect_options(&mut self, stmts: Vec<TokenStream>, name: Token) -> TokenStream {
         // Base case:
         if stmts.len() == 0 {
-            return quote!{
+            return quote! {
                 return Ok(AstNode::new(#name, identifiers.clone()));
             };
         }
@@ -516,24 +534,22 @@ impl Collector {
         let head = stmts[0].clone();
         let body = self.collect_options(stmts[1..].to_vec().clone(), name.clone());
 
-        quote!{
+        quote! {
             #head {
                 #body
             }
         }
-
-
     }
 
-    /// Function used to auto-generate the parser function, 
+    /// Function used to auto-generate the parser function,
     /// of the following format:
-    /// 
+    ///
     /// Inputs: &mut TokenTracker
-    /// 
+    ///
     /// Outputs: Vec<AstNode>
     fn generate_parser(&self) -> TokenStream {
         let top_name = &self.names[0];
-        quote!{
+        quote! {
             pub fn parser(mut tracker: &mut TokenTracker) -> Option<AstOrToken> {
                 //let mut res = vec![];
 
@@ -557,17 +573,17 @@ impl Collector {
         }
     }
 
-    /// Helper to put all the trait definitions in one location. This 
+    /// Helper to put all the trait definitions in one location. This
     /// trait will be implied for three different items:
-    /// 
+    ///
     /// - GrammarToken
     /// - &str / maybe String
     /// - (TokenType)
     fn generate_expect_func(&self) -> TokenStream {
-        quote!{
+        quote! {
             pub fn expect(mut tracker: &mut TokenTracker, expected: &dyn Any) -> Option<AstOrToken> {
                 println!("----- In expect ------");
-                // For each type it could be, check if the token matches. 
+                // For each type it could be, check if the token matches.
                 if let Some(grammar) = expected.downcast_ref::<GrammarToken>() { // Ast
                     println!("matching {:?}", grammar);
                     let ast = match_rule(&mut tracker, grammar);
@@ -587,10 +603,10 @@ impl Collector {
                         println!("Returned None (test.is_err())");
                         return None
                     }
-                
+
                     let top = test.unwrap();
                     let lit_str = string_literal.to_string();
-                    
+
                     if top.lexeme == lit_str {
                         println!("Returned Some");
                         return Some(AstOrToken::Tok(top.clone()));
@@ -608,10 +624,10 @@ impl Collector {
                         println!("Returned None (test.is_err())");
                         return None
                     }
-                
+
                     let top = test.unwrap();
                     let lit_str = literal.to_string();
-                    
+
                     if top.lexeme == lit_str {
                         println!("Returned Some");
                         return Some(AstOrToken::Tok(top.clone()));
@@ -621,7 +637,7 @@ impl Collector {
                 }
                 if let Some(tok_type) = expected.downcast_ref::<TokenType> () { // Token
                     println!("matching tok_type {:?}", tok_type);
-                    // If we get here, we expect the token.identifier to match the de-referenced type 
+                    // If we get here, we expect the token.identifier to match the de-referenced type
                     let test = get_token(&mut tracker);
 
                     if test.is_err() {
@@ -651,13 +667,13 @@ impl Collector {
 
     /// Code used to generate the function that will work in tandem with the expect
     /// function. These two will call one another until something works I guess?
-    /// 
-    /// Might not actually work out that way, but w/e. . . 
+    ///
+    /// Might not actually work out that way, but w/e. . .
     fn generate_match_func(&self) -> TokenStream {
         let rules = self.rules.clone();
         let names = self.names.clone();
-        
-        quote!{
+
+        quote! {
             fn match_rule(mut tracker: &mut TokenTracker, grammar_token: &GrammarToken) -> Result<AstNode, ()> {
                 println!("Matching {:?} in match_rule", grammar_token);
                 match grammar_token {
@@ -670,4 +686,3 @@ impl Collector {
         }
     }
 }
-

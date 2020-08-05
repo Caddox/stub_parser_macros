@@ -5,7 +5,7 @@
 ///     TokenTracker: A structure used to walk a vector of tokens to help       ///
 ///         emulate the feeling of a proper PEG parser.                         ///
 /// Description: This file contains functions used to help maintain accurate    ///
-///     token tracking while walking the FlatStream we are given.               /// 
+///     token tracking while walking the FlatStream we are given.               ///
 /// *************************************************************************** ///
 use crate::flat_stream::{FlatStream, Token};
 
@@ -22,7 +22,7 @@ impl TokenTracker {
         TokenTracker {
             location: 0,
             max_size: tokens.tokens.len(),
-            toks: tokens.clone()
+            toks: tokens.clone(),
         }
     }
 }
@@ -31,13 +31,16 @@ impl TokenTracker {
 pub fn get_token(tracker: &mut TokenTracker) -> Result<Token, String> {
     // Check if we can grab the next token at all
     if tracker.location == tracker.max_size {
-        let err = format!("TokenTracker (get_token) ran off then end of the token list (given {}, max of {})", tracker.location, tracker.max_size);
+        let err = format!(
+            "TokenTracker (get_token) ran off then end of the token list (given {}, max of {})",
+            tracker.location, tracker.max_size
+        );
         return Err(err);
     }
 
     // Grab the token for output
     let out = tracker.toks.tokens[tracker.location].clone();
-        
+
     // Increment the current position.
     tracker.location += 1;
 
@@ -49,13 +52,16 @@ pub fn get_token(tracker: &mut TokenTracker) -> Result<Token, String> {
 pub fn peek_token(tracker: &mut TokenTracker) -> Result<Token, String> {
     // Check if we can grab the next token at all
     if tracker.location == tracker.max_size {
-        let err = format!("TokenTracker (peek_token) ran off then end of the token list (given {}, max of {})", tracker.location, tracker.max_size);
+        let err = format!(
+            "TokenTracker (peek_token) ran off then end of the token list (given {}, max of {})",
+            tracker.location, tracker.max_size
+        );
         return Err(err);
     }
 
     // Grab the token for output
     let out = tracker.toks.tokens[tracker.location].clone();
-        
+
     Ok(out)
 }
 

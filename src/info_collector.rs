@@ -245,12 +245,6 @@ impl Collector {
                         modifier_token.clone(),
                         name.clone())?;
  
-                    /*
-                    current_option.push(self.make_paren_group_option(paren_group.clone(),
-                        internals.clone(),
-                        modifier_token.clone(),
-                        name.clone())?);
-                        */
     
                     let mut out = quote!{};
                     for internal in nested_items {
@@ -260,11 +254,6 @@ impl Collector {
                         }
                     }
                     current_option.push(out);
-                    /*
-                    for internal in nested_items {
-                        current_option.push(internal);
-                    }
-                    */
                      
                     
                     continue;
@@ -300,10 +289,8 @@ impl Collector {
     fn make_paren_group_option(&mut self, group: Token, internals: Vec<Token>, modifier: Token, name: Token) -> Result<Vec<TokenStream>, String> {
         // Im really not sure how to do this. . . 
 
-        // Send the internals to the rule maker.
+        // Make a new token stream out of the internals.
         let mut tr = TokenTracker::new(&FlatStream::new_from_tokens(internals.clone()));
-        //let internal_rule = self.rule_gen_interior(&mut tr, name.clone())?;
-        //println!("===================== Within {:} =====================", quote!(#name).to_string());
 
         // Iterate over the internals; generate statements for each.
 
@@ -369,13 +356,6 @@ impl Collector {
                     modifier_token.clone(),
                     name.clone())?;
  
-                /*()
-                current_option.push(self.make_paren_group_option(paren_group.clone(),
-                    internals.clone(),
-                    modifier_token.clone(),
-                    name.clone())?);
-                    */
-
                 let mut out = quote!{};
                 for internal in nested_items {
                     out = quote!{
@@ -384,13 +364,6 @@ impl Collector {
                     }
                 }
                 current_option.push(out);
-
-                /*
-                for internal in nested_items {
-                    current_option.push(internal);
-                }
-                */
-                     
                     
                 // The existence of this continue is questionable.
                 continue;
@@ -411,14 +384,8 @@ impl Collector {
                 inside = quote!{
                     #inside
                     #(
+                        // Just trust me on this one.
                         #item
-                        //if identifiers.last().cloned().unwrap().is_none() {
-                            //let back_one = mark(&mut tracker) - 1;
-                            //reset(&mut tracker, back_one);
-                            //identifiers.pop(); // Pop the failed option and move on
-                            //println!("Backing up inside of the loop. . . ");
-                        //}
-                        //else {
                         if identifiers.last().cloned().unwrap().is_some() {
                             get_got = true;
                         }
@@ -475,66 +442,6 @@ impl Collector {
 
         output.push(out);
         Ok(output)
-        /*
-        for item in all_options {
-            let out: TokenStream;
-            // TODO: This may actually fail in rare cases,
-            // look into methods for fixing it (i.e., fast hash of some kind?)
-            let fb_p = format_ident!("fallback_pos_{:}_{:}", iteration, internals.len());
-            let fb_s = format_ident!("fallback_size_{:}_{:}", iteration, internals.len());
-            if to_string(modifier.clone())? == String::from("*") {
-                out = quote!{
-                    loop {
-                        let #fb_p = mark(&mut tracker);
-                        let #fb_s = identifiers.len();
-                    #(
-                        #item
-                        if identifiers.last().cloned().unwrap().is_none() {
-                            while identifiers.len() != #fb_s {identifiers.pop();}
-                            reset(&mut tracker, #fb_p);
-                            break;
-                        }
-                    )*}
-                    // In the case that nothing apparently exists, do the following.
-                    /*
-                    if identifiers.len() != 0 {
-                        return Ok(AstNode::new(#name, identifiers.clone()));
-                    }
-                    */
-                };
-            }
-            else if give_group_deliminator(group.clone()) == String::from("[") ||
-            to_string(modifier.clone())? == String::from("?") {
-                out = quote!{
-                    #(
-                        #item
-                        if identifiers.last().cloned().unwrap().is_none() {
-                            // Back up the marker by one
-                            let back_one = mark(&mut tracker) - 1;
-                            reset(&mut tracker, back_one);
-                            identifiers.pop(); // Pop the failed option and move on
-                        }
-                    )*
-                }     
-            }
-            else {
-                out = quote!{
-                    #(
-                        #item
-                        if identifiers.last().cloned().unwrap().is_none() {
-                            return Err(());
-                        }
-                    )*
-                }
-            }
-
-            iteration += 1;
-            output.push(out);
-
-        }
-
-        Ok(output)
-        */
     }
 
     /// Making an identifier option is similar, but different.

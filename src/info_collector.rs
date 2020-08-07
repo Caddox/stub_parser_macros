@@ -546,7 +546,7 @@ impl Collector {
     ///
     /// Inputs: &mut TokenTracker
     ///
-    /// Outputs: Vec<AstNode>
+    /// Outputs: Option<AstOrToken>
     fn generate_parser(&self) -> TokenStream {
         let top_name = &self.names[0];
         quote! {
@@ -680,8 +680,6 @@ impl Collector {
                     #( GrammarToken::#names => { #rules },)*
                     _ => {panic! ("Parsing failed to match token on grammar rule: {:?}", grammar_token) }
                 }
-
-
             }
         }
     }

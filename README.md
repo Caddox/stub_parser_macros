@@ -3,7 +3,7 @@ This project contains the framework and methods used to generate a PEG(ish) pars
 for the parsing of a programming language. It allows a transformation of information from a
 language similar to Extended BNF into a functional parser used to generate an Abstract Syntax Tree.
 
-# Usage #
+## Usage ##
 
 First, add the crate to your Cargo.toml file. Next, import the macro
 
@@ -60,16 +60,17 @@ format:
    parser(&mut tracker: &mut TokenTracker) -> Option<AstOrToken>
   ```
    
-  # Example Input #
+  ## Example Input ##
   ```
   peg_parse!{
        language := (stmt)* #(TokenType::EOF);
-       stmt := "let" #(TokenType::Identifier) '=' (#(TokenType::Identifier) | numeric)*;
+       stmt := "let" ident '=' (ident | numeric)*;
+       ident := #(TokenType::Identifier);
        numeric := #(TokenType::Numeric);
   }
   ```
  
-  # Current Bugs #
+  ## Current Bugs ##
   As hinted at above, there are some issues:
    - Code generation gets very confused when mixing some parenthesis with some modifiers, notably the ```*``` with square brackets.
    - The markers used to reset the token tracker inside of ```*``` groups can, in rare cases, overwrite one another.
@@ -80,4 +81,5 @@ format:
    - This may not actually be a full PEG parser, as pack-rat parsing has not been implemented. Left-recursion is also impossible, unless you
   want to wait until the heat death of the universe for the parser to work :(.
    - The AstOrToken type is a workaround for allowing either Tokens or AstNodes as children for AstNodes. It's dumb and I hate it.
+   - It turns out interpolating symbol literals (the #() things) do not work inside of parenthesis groups. Ask me how I know.
  

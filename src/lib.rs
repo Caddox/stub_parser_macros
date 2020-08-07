@@ -66,7 +66,8 @@
  * ```
  * peg_parse!{
  *      language := (stmt)* #(TokenType::EOF);
- *      stmt := "let" #(TokenType::Identifier) '=' (#(TokenType::Identifier) | numeric)*;
+ *      stmt := "let" #(TokenType::Identifier) '=' (ident | numeric)*;
+ *      ident := #(TokenType::Identifier);
  *      numeric := #(TokenType::Numeric);
  * }
  * ```
@@ -82,6 +83,7 @@
  *  - This may not actually be a full PEG parser, as pack-rat parsing has not been implemented. Left-recursion is also impossible, unless you
  * want to wait until the heat death of the universe for the parser to work :(.
  *  - The AstOrToken type is a workaround for allowing either Tokens or AstNodes as children for AstNodes. It's dumb and I hate it.
+ *  - It turns out interpolating symbol literals (the #() things) do not work inside of parenthesis groups. Ask me how I know.
  *
  */
 /// *************************************************************************** ///

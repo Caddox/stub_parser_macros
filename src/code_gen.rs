@@ -27,10 +27,10 @@ pub fn generate_structures(names: &Vec<Token>) -> TokenStream {
         #[derive(Debug, Clone)]
         pub struct AstNode {
             Type: GrammarToken,
-            child: Vec<Option<AstOrToken>>,
+            child: Vec<Result<AstOrToken, ()>>,
         }
         impl AstNode {
-            pub fn new(tok: GrammarToken, child: Vec<Option<AstOrToken>>) -> AstNode {
+            pub fn new(tok: GrammarToken, child: Vec<Result<AstOrToken, ()>>) -> AstNode {
                 AstNode {
                     Type: tok,
                     child: child,

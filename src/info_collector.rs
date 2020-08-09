@@ -99,7 +99,7 @@ impl Collector {
                 Ok(v) => {
                     // If okay, merge all the rules into one big rule for one vector slot.
                     let individual_rules = quote! {
-                        let mut identifiers: Vec<Option<AstOrToken>> = vec![];
+                        let mut identifiers: Vec<Result<AstOrToken, ()>> = vec![];
                         #(#v)*
                         return Err(());
                     };
@@ -405,13 +405,14 @@ impl Collector {
                     #(
                         // Just trust me on this one.
                         #item
-                        if identifiers.last().cloned().unwrap().is_some() {
+                        if identifiers.last().cloned().unwrap().is_ok() {
                             get_got = true;
                         }
                     )*
                     if get_got {
                         continue;
                     }
+                    get_got = false;
                 };
                 out = quote! {
                     loop {
@@ -433,7 +434,7 @@ impl Collector {
                     #inside
                     #(
                         #item
-                        if identifiers.last().cloned().unwrap().is_none() {
+                        if identifiers.last().cloned().unwrap().is_err() {
                             // Back up the marker by one
                             let back_one = mark(&mut tracker) - 1;
                             reset(&mut tracker, back_one);
@@ -449,7 +450,7 @@ impl Collector {
                     #inside
                     #(
                         #item
-                        if identifiers.last().cloned().unwrap().is_none() {
+                        if identifiers.last().cloned().unwrap().is_err() {
                             return Err(());
                         }
                     )*
@@ -507,7 +508,8 @@ impl Collector {
         quote! {
             //identifiers.push(expect(&mut tracker, &#tok));
             #ident
-            if identifiers.last().cloned().unwrap().is_some() // What the fuck.
+            //if identifiers.last().cloned().unwrap().is_some() // What the fuck.
+            if identifiers.last().cloned().unwrap().is_ok() 
         }
     }
 
@@ -546,29 +548,15 @@ impl Collector {
     ///
     /// Inputs: &mut TokenTracker
     ///
-    /// Outputs: Option<AstOrToken>
+    /// Outputs: Result<AstOrToken, ()>
     fn generate_parser(&self) -> TokenStream {
         let top_name = &self.names[0];
         quote! {
-            pub fn parser(mut tracker: &mut TokenTracker) -> Option<AstOrToken> {
+            pub fn parser(mut tracker: &mut TokenTracker) -> Result<AstOrToken, ()> {
                 //let mut res = vec![];
 
                 let mut tree = expect(&mut tracker, &#top_name);
                 tree
-                /*
-
-                tree
-
-                /*
-                while tree.is_some() {
-                    res.push(tree.unwrap());
-
-                    tree = expect(&mut tracker, &#top_name);
-                }
-                */
-
-                Ok(res)
-                */
             }
         }
     }
@@ -581,86 +569,87 @@ impl Collector {
     /// - (TokenType)
     fn generate_expect_func(&self) -> TokenStream {
         quote! {
-            pub fn expect(mut tracker: &mut TokenTracker, expected: &dyn Any) -> Option<AstOrToken> {
-                println!("----- In expect ------");
+            pub fn expect(mut tracker: &mut TokenTracker, expected: &dyn Any) -> Result<AstOrToken, ()> {
+                //println!("----- In expect ------");
                 // For each type it could be, check if the token matches.
                 if let Some(grammar) = expected.downcast_ref::<GrammarToken>() { // Ast
-                    println!("matching {:?}", grammar);
+                    //println!("matching {:?}", grammar);
+                    //let ast = match_rule(&mut tracker, grammar);
                     let ast = match_rule(&mut tracker, grammar);
                     match ast {
-                        Ok(tree) => { return Some(AstOrToken::Ast(tree)); },
-                        Err(_) => { return None }
+                        Ok(tree) => { return Ok(AstOrToken::Ast(tree)); },
+                        Err(_) => { return Err(()) }
                     }
                     //return Some(AstOrToken::Ast(match_rule(&mut tracker, grammar)));
                 }
                 if let Some(string_literal) = expected.downcast_ref::<&str>() { // Literal string of tokens to match
                     // ex: rule := identifier "->" option;
-                    println!("MATCHING STRING LITERAL {:?}", string_literal);
+                    //println!("MATCHING STRING LITERAL {:?}", string_literal);
 
                     let test = get_token(&mut tracker);
 
                     if test.is_err() { // Ensure that an error works correctly.
-                        println!("Returned None (test.is_err())");
-                        return None
+                        //println!("Returned None (test.is_err())");
+                        return Err(());
                     }
 
                     let top = test.unwrap();
                     let lit_str = string_literal.to_string();
 
                     if top.lexeme == lit_str {
-                        println!("Returned Some");
-                        return Some(AstOrToken::Tok(top.clone()));
+                        //println!("Returned Some");
+                        return Ok(AstOrToken::Tok(top.clone()));
                     }
-                    println!("Returned none");
-                    return None;
+                    //println!("Returned none");
+                    return Err(());
 
                 }
                 if let Some(literal) = expected.downcast_ref::<char>() { // Token
-                    println!("MATCHING LITERAL {:?}", literal);
+                    //println!("MATCHING LITERAL {:?}", literal);
                     // For this one, we have to match the lexeme field of the token
                     let test = get_token(&mut tracker);
 
                     if test.is_err() { // Ensure that an error works correctly.
-                        println!("Returned None (test.is_err())");
-                        return None
+                        //println!("Returned None (test.is_err())");
+                        return Err(());
                     }
 
                     let top = test.unwrap();
                     let lit_str = literal.to_string();
 
                     if top.lexeme == lit_str {
-                        println!("Returned Some");
-                        return Some(AstOrToken::Tok(top.clone()));
+                        //println!("Returned Some");
+                        return Ok(AstOrToken::Tok(top.clone()));
                     }
-                    println!("Returned none");
-                    return None;
+                    //println!("Returned none");
+                    return Err(());
                 }
                 if let Some(tok_type) = expected.downcast_ref::<TokenType> () { // Token
-                    println!("matching tok_type {:?}", tok_type);
+                    //println!("matching tok_type {:?}", tok_type);
                     // If we get here, we expect the token.identifier to match the de-referenced type
                     let test = get_token(&mut tracker);
 
                     if test.is_err() {
-                        return None
+                        return Err(());
                     }
                     let top = test.unwrap();
 
 
-                    println!("Token: {:?}", top.clone());
-                    println!("Identifier: {:?}", tok_type);
+                    //println!("Token: {:?}", top.clone());
+                    //println!("Identifier: {:?}", tok_type);
 
                     let identifier = top.clone().identifier;
 
                     if &identifier == tok_type {
-                        println!("returned some");
-                        return Some(AstOrToken::Tok(top));
+                        //println!("returned some");
+                        return Ok(AstOrToken::Tok(top));
                     }
                     else {
-                        println!("returned none");
-                        return None;
+                        //println!("returned none");
+                        return Err(());
                     }
                 }
-                return None;
+                return Err(());
             }
         }
     }

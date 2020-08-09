@@ -99,9 +99,11 @@ impl Collector {
                 Ok(v) => {
                     // If okay, merge all the rules into one big rule for one vector slot.
                     let individual_rules = quote! {
-                        let mut identifiers: Vec<Result<AstOrToken, ()>> = vec![];
+                        let mut identifiers: Vec<Result<AstOrToken, ParserError>> = vec![];
+                        let mut parser_errors: Vec<ParserError> = vec![];
                         #(#v)*
-                        return Err(());
+                        let err = ParserError::new(&mut tracker, "Parser failed to match rules".to_string(), parser_errors.clone());
+                        return Err(err);
                     };
                     self.rules.push(individual_rules);
                 }
@@ -155,6 +157,12 @@ impl Collector {
             options.push(quote! {
                 let pos = mark(&mut tracker);
                 #composed
+                let err = ParserError::new(
+                    &mut tracker,
+                    format!("Failed to match {:?}", #working_name ),
+                    vec![identifiers.last().cloned().unwrap().err().unwrap()], // Dude. Why.
+                );
+                parser_errors.push(err);
                 reset(&mut tracker, pos);
                 identifiers.clear();
             })
@@ -436,8 +444,8 @@ impl Collector {
                         #item
                         if identifiers.last().cloned().unwrap().is_err() {
                             // Back up the marker by one
-                            let back_one = mark(&mut tracker) - 1;
-                            reset(&mut tracker, back_one);
+                            //let back_one = mark(&mut tracker) - 1;
+                            //reset(&mut tracker, back_one);
                             identifiers.pop(); // Pop the failed option and move on
                         }
                     )*
@@ -451,7 +459,12 @@ impl Collector {
                     #(
                         #item
                         if identifiers.last().cloned().unwrap().is_err() {
-                            return Err(());
+                            let err = ParserError(
+                                &mut tracker,
+                                "Failed to match rule.".to_string(),
+                                vec![identifiers.last().cloned().unwrap().err().unwrap()],
+                            );
+                            return Err(err);
                         }
                     )*
                 };
@@ -552,7 +565,7 @@ impl Collector {
     fn generate_parser(&self) -> TokenStream {
         let top_name = &self.names[0];
         quote! {
-            pub fn parser(mut tracker: &mut TokenTracker) -> Result<AstOrToken, ()> {
+            pub fn parser(mut tracker: &mut TokenTracker) -> Result<AstOrToken, ParserError> {
                 //let mut res = vec![];
 
                 let mut tree = expect(&mut tracker, &#top_name);
@@ -569,7 +582,7 @@ impl Collector {
     /// - (TokenType)
     fn generate_expect_func(&self) -> TokenStream {
         quote! {
-            pub fn expect(mut tracker: &mut TokenTracker, expected: &dyn Any) -> Result<AstOrToken, ()> {
+            pub fn expect(mut tracker: &mut TokenTracker, expected: &dyn Any) -> Result<AstOrToken, ParserError> {
                 //println!("----- In expect ------");
                 // For each type it could be, check if the token matches.
                 if let Some(grammar) = expected.downcast_ref::<GrammarToken>() { // Ast
@@ -578,7 +591,7 @@ impl Collector {
                     let ast = match_rule(&mut tracker, grammar);
                     match ast {
                         Ok(tree) => { return Ok(AstOrToken::Ast(tree)); },
-                        Err(_) => { return Err(()) }
+                        Err(m) => { return Err(m) }
                     }
                     //return Some(AstOrToken::Ast(match_rule(&mut tracker, grammar)));
                 }
@@ -586,51 +599,67 @@ impl Collector {
                     // ex: rule := identifier "->" option;
                     //println!("MATCHING STRING LITERAL {:?}", string_literal);
 
+                    let test_pos = mark(&mut tracker);
                     let test = get_token(&mut tracker);
 
                     if test.is_err() { // Ensure that an error works correctly.
                         //println!("Returned None (test.is_err())");
-                        return Err(());
+                        reset(&mut tracker, test_pos);
+                        let err = ParserError::new(&mut tracker, "Incomplete Statement".to_string(), vec![]);
+                        return Err(err);
+                        //return Err(());
                     }
 
                     let top = test.unwrap();
                     let lit_str = string_literal.to_string();
 
-                    if top.lexeme == lit_str {
+                    if top.lexeme == lit_str.clone() {
                         //println!("Returned Some");
                         return Ok(AstOrToken::Tok(top.clone()));
                     }
                     //println!("Returned none");
-                    return Err(());
+                    reset(&mut tracker, test_pos);
+                    let err = ParserError::new(&mut tracker, lit_str.clone(), vec![]);
+                    return Err(err);
+                    //return Err(());
 
                 }
                 if let Some(literal) = expected.downcast_ref::<char>() { // Token
                     //println!("MATCHING LITERAL {:?}", literal);
                     // For this one, we have to match the lexeme field of the token
+                    let test_pos = mark(&mut tracker);
                     let test = get_token(&mut tracker);
 
                     if test.is_err() { // Ensure that an error works correctly.
                         //println!("Returned None (test.is_err())");
-                        return Err(());
+                        reset(&mut tracker, test_pos);
+                        let err = ParserError::new(&mut tracker, "Incomplete Statement".to_string(), vec![]);
+                        return Err(err);
+                        //return Err(());
                     }
 
                     let top = test.unwrap();
                     let lit_str = literal.to_string();
 
-                    if top.lexeme == lit_str {
+                    if top.lexeme == lit_str.clone() {
                         //println!("Returned Some");
                         return Ok(AstOrToken::Tok(top.clone()));
                     }
                     //println!("Returned none");
-                    return Err(());
+                    reset(&mut tracker, test_pos);
+                    let err = ParserError::new(&mut tracker, lit_str.clone(), vec![]);
+                    return Err(err);
                 }
                 if let Some(tok_type) = expected.downcast_ref::<TokenType> () { // Token
                     //println!("matching tok_type {:?}", tok_type);
                     // If we get here, we expect the token.identifier to match the de-referenced type
+                    let test_pos = mark(&mut tracker);
                     let test = get_token(&mut tracker);
 
                     if test.is_err() {
-                        return Err(());
+                        reset(&mut tracker, test_pos);
+                        let err = ParserError::new(&mut tracker, "Incomplete Statement".to_string(), vec![]);
+                        return Err(err);
                     }
                     let top = test.unwrap();
 
@@ -640,16 +669,20 @@ impl Collector {
 
                     let identifier = top.clone().identifier;
 
-                    if &identifier == tok_type {
+                    if &identifier == &tok_type.clone() {
                         //println!("returned some");
                         return Ok(AstOrToken::Tok(top));
                     }
                     else {
                         //println!("returned none");
-                        return Err(());
+                        reset(&mut tracker, test_pos);
+                        let err = ParserError::new(&mut tracker, format!("Failed to match {:?}", tok_type.clone()), vec![]); 
+                        return Err(err);
+                        //return Err(());
                     }
                 }
-                return Err(());
+                let err = ParserError::new(&mut tracker, "Unexpected token given to `expect`".to_string(), vec![]);
+                return Err(err);
             }
         }
     }
@@ -663,7 +696,7 @@ impl Collector {
         let names = self.names.clone();
 
         quote! {
-            fn match_rule(mut tracker: &mut TokenTracker, grammar_token: &GrammarToken) -> Result<AstNode, ()> {
+            fn match_rule(mut tracker: &mut TokenTracker, grammar_token: &GrammarToken) -> Result<AstNode, ParserError> {
                 println!("Matching {:?} in match_rule", grammar_token);
                 match grammar_token {
                     #( GrammarToken::#names => { #rules },)*
